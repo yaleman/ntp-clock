@@ -9,3 +9,5 @@ serde = { version = "1.0.228", features = ["derive"] }
 time = "0.3.45"
 tokio = { version = "1.49.0", features = ["full"] }
 hickory-resolver = "0.25.2"
+log = "0.4.29"
+simple_logger = "5.1.0"

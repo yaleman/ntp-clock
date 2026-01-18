@@ -1,3 +1,15 @@
+#![deny(warnings)]
+#![warn(unused_extern_crates)]
+#![deny(clippy::todo)]
+#![deny(clippy::unimplemented)]
+#![deny(clippy::unwrap_used)]
+#![deny(clippy::expect_used)]
+#![deny(clippy::panic)]
+#![deny(clippy::unreachable)]
+#![deny(clippy::await_holding_lock)]
+#![deny(clippy::needless_pass_by_value)]
+#![deny(clippy::trivially_copy_pass_by_ref)]
+
 pub mod cli;
 pub mod prelude;
 
@@ -5,6 +17,7 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use hickory_resolver::Resolver;
 use prelude::*;
+use time::Duration as TimeDuration;
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
@@ -12,6 +25,7 @@ use tokio::time::timeout;
 pub struct NtpData {
     pub last_check: OffsetDateTime,
     pub last_time: OffsetDateTime,
+    pub last_offset: TimeDuration,
 }
 
 pub struct NtpClient {
@@ -22,12 +36,14 @@ pub struct NtpClient {
 
 impl NtpClient {
     pub async fn new(server: &str) -> Result<Self, ClockError> {
-        let server = resolve_server(server).await?;
+        let server: SocketAddr = resolve_server(server).await?;
+        let validity = std::time::Duration::from_secs(60);
         Ok(NtpClient {
             server,
             data: Arc::new(RwLock::new(NtpData {
-                last_check: OffsetDateTime::now_utc(),
+                last_check: OffsetDateTime::now_utc() - (validity * 3),
                 last_time: OffsetDateTime::now_utc(),
+                last_offset: TimeDuration::ZERO,
             })),
             time_validity: std::time::Duration::from_secs(60),
         })
@@ -51,7 +67,26 @@ impl NtpClient {
         Ok(data.last_time)
     }
 
+    fn parse_packet(packet: &[u8]) -> Result<OffsetDateTime, ClockError> {
+        if packet.len() < 48 {
+            return Err(ClockError::InvalidResponse);
+        }
+
+        let seconds = u32::from_be_bytes([packet[40], packet[41], packet[42], packet[43]]) as i64;
+        let fraction = u32::from_be_bytes([packet[44], packet[45], packet[46], packet[47]]);
+        let unix_seconds = seconds - 2_208_988_800i64;
+        let nanos = ((fraction as u128 * 1_000_000_000u128) >> 32) as i128;
+        let timestamp = (unix_seconds as i128)
+            .checked_mul(1_000_000_000)
+            .and_then(|secs| secs.checked_add(nanos))
+            .ok_or(ClockError::InvalidResponse)?;
+        let ntp_now = OffsetDateTime::from_unix_timestamp_nanos(timestamp)
+            .map_err(|_| ClockError::InvalidResponse)?;
+        Ok(ntp_now)
+    }
+
     pub async fn update(&self) -> Result<OffsetDateTime, ClockError> {
+        log::debug!("Updating...");
         let socket = UdpSocket::bind("0.0.0.0:0")
             .await
             .map_err(|_| ClockError::NetworkError)?;
@@ -73,22 +108,20 @@ impl NtpClient {
             return Err(ClockError::InvalidResponse);
         }
 
-        let seconds =
-            u32::from_be_bytes([response[40], response[41], response[42], response[43]]) as i64;
-        let fraction = u32::from_be_bytes([response[44], response[45], response[46], response[47]]);
-        let unix_seconds = seconds - 2_208_988_800i64;
-        let nanos = ((fraction as u128 * 1_000_000_000u128) >> 32) as i128;
-        let timestamp = (unix_seconds as i128)
-            .checked_mul(1_000_000_000)
-            .and_then(|secs| secs.checked_add(nanos))
-            .ok_or(ClockError::InvalidResponse)?;
-        let now = OffsetDateTime::from_unix_timestamp_nanos(timestamp)
-            .map_err(|_| ClockError::InvalidResponse)?;
+        let ntp_now = Self::parse_packet(&response)?;
+        let local_time = OffsetDateTime::now_utc();
 
         let mut data = self.data.write().await;
-        data.last_check = now;
-        data.last_time = now;
-        Ok(now)
+        data.last_check = ntp_now;
+        data.last_time = ntp_now;
+        data.last_offset = ntp_now - local_time;
+        log::debug!("Done updating NTP time: {}", ntp_now);
+        Ok(ntp_now)
+    }
+
+    pub async fn get_offset(&self) -> TimeDuration {
+        let data = self.data.read().await;
+        data.last_offset
     }
 }
 
