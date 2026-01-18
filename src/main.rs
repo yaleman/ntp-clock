@@ -10,11 +10,13 @@
 #![deny(clippy::needless_pass_by_value)]
 #![deny(clippy::trivially_copy_pass_by_ref)]
 
+use std::process::ExitCode;
+
 use log::LevelFilter;
 use ntp_clock::{cli::Cli, prelude::*};
 
 #[tokio::main]
-async fn main() -> Result<(), ClockError> {
+async fn main() -> Result<(), ExitCode> {
     let cliopts = Cli::parse();
 
     let level = if cliopts.debug {
@@ -31,10 +33,15 @@ async fn main() -> Result<(), ClockError> {
 
     let client = NtpClient::new(&cliopts.ntp_server)
         .await
-        .inspect_err(|err| log::error!("Failed to create NTP client: {err:?}"))?;
-    let time = client.get_time().await?;
+        .inspect_err(|err| {
+            error!("Failed to create NTP client: {err}");
+        })?;
+    let time = client
+        .get_time()
+        .await
+        .inspect_err(|err| error!("Failed to run update: {err}"))?;
     let offset = client.get_offset().await;
-    log::info!(
+    info!(
         "NTP time from {}: {} (Offset: {}ns)",
         cliopts.ntp_server,
         time,

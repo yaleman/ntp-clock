@@ -13,6 +13,7 @@
 pub mod cli;
 pub mod prelude;
 
+use std::process::ExitCode;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use hickory_resolver::Resolver;
@@ -86,7 +87,7 @@ impl NtpClient {
     }
 
     pub async fn update(&self) -> Result<OffsetDateTime, ClockError> {
-        log::debug!("Updating...");
+        debug!("Updating...");
         let socket = UdpSocket::bind("0.0.0.0:0")
             .await
             .map_err(|_| ClockError::NetworkError)?;
@@ -101,7 +102,7 @@ impl NtpClient {
         let mut response = [0u8; 48];
         let recv_result = timeout(Duration::from_secs(5), socket.recv_from(&mut response))
             .await
-            .map_err(|_| ClockError::NetworkError)?;
+            .map_err(|_| ClockError::Timeout)?;
 
         let (len, _) = recv_result.map_err(|_| ClockError::NetworkError)?;
         if len < 48 {
@@ -115,7 +116,7 @@ impl NtpClient {
         data.last_check = ntp_now;
         data.last_time = ntp_now;
         data.last_offset = ntp_now - local_time;
-        log::debug!("Done updating NTP time: {}", ntp_now);
+        debug!("Done updating NTP time: {}", ntp_now);
         Ok(ntp_now)
     }
 
@@ -155,6 +156,19 @@ pub enum ClockError {
     InvalidResponse,
     ConfigError(String),
     NoTimeAvailable,
+    Timeout,
+}
+
+impl std::fmt::Display for ClockError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ClockError::NetworkError => write!(f, "Network error occurred"),
+            ClockError::InvalidResponse => write!(f, "Received invalid response from NTP server"),
+            ClockError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
+            ClockError::NoTimeAvailable => write!(f, "No valid time available"),
+            ClockError::Timeout => write!(f, "Operation timed out"),
+        }
+    }
 }
 
 impl From<std::net::AddrParseError> for ClockError {
@@ -166,5 +180,17 @@ impl From<std::net::AddrParseError> for ClockError {
 impl From<hickory_resolver::ResolveError> for ClockError {
     fn from(err: hickory_resolver::ResolveError) -> Self {
         ClockError::ConfigError(format!("DNS resolution failed: {err}"))
+    }
+}
+
+impl From<ClockError> for ExitCode {
+    fn from(value: ClockError) -> Self {
+        match value {
+            ClockError::NetworkError => ExitCode::from(1),
+            ClockError::InvalidResponse => ExitCode::from(2),
+            ClockError::ConfigError(_) => ExitCode::from(3),
+            ClockError::NoTimeAvailable => ExitCode::from(4),
+            ClockError::Timeout => ExitCode::from(5),
+        }
     }
 }
