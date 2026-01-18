@@ -69,14 +69,17 @@ impl NtpClient {
         Ok(data.last_time)
     }
 
-    fn parse_packet(packet: &[u8]) -> Result<OffsetDateTime, ClockError> {
+    pub fn parse_packet(
+        packet: &[u8],
+        local_time: OffsetDateTime,
+    ) -> Result<(OffsetDateTime, TimeDuration), ClockError> {
         if packet.len() < 48 {
             return Err(ClockError::InvalidResponse);
         }
 
         let seconds = u32::from_be_bytes([packet[40], packet[41], packet[42], packet[43]]) as i64;
         let fraction = u32::from_be_bytes([packet[44], packet[45], packet[46], packet[47]]);
-        let unix_seconds = seconds - 2_208_988_800i64;
+        let unix_seconds = seconds - NTP_UNIX_EPOCH;
         let nanos = ((fraction as u128 * 1_000_000_000u128) >> 32) as i128;
         let timestamp = (unix_seconds as i128)
             .checked_mul(1_000_000_000)
@@ -84,7 +87,8 @@ impl NtpClient {
             .ok_or(ClockError::InvalidResponse)?;
         let ntp_now = OffsetDateTime::from_unix_timestamp_nanos(timestamp)
             .map_err(|_| ClockError::InvalidResponse)?;
-        Ok(ntp_now)
+        let offset = ntp_now - local_time;
+        Ok((ntp_now, offset))
     }
 
     pub async fn update(&self) -> Result<OffsetDateTime, ClockError> {
@@ -106,26 +110,33 @@ impl NtpClient {
             .map_err(|_| ClockError::Timeout)?;
 
         let (len, _) = recv_result.map_err(|_| ClockError::NetworkError)?;
-        if len < 48 {
-            return Err(ClockError::InvalidResponse);
-        }
-
-        let ntp_now = Self::parse_packet(&response)?;
         let local_time = OffsetDateTime::now_utc();
-
-        let mut data = self.data.write().await;
-        data.last_check = ntp_now;
-        data.last_time = ntp_now;
-        data.last_offset = ntp_now - local_time;
-        debug!("Done updating NTP time: {}", ntp_now);
-        Ok(ntp_now)
+        self.update_from_response(&response[..len], local_time)
+            .await
     }
 
     pub async fn get_offset(&self) -> TimeDuration {
         let data = self.data.read().await;
         data.last_offset
     }
+
+    pub async fn update_from_response(
+        &self,
+        response: &[u8],
+        local_time: OffsetDateTime,
+    ) -> Result<OffsetDateTime, ClockError> {
+        let (ntp_now, offset) = Self::parse_packet(response, local_time)?;
+
+        let mut data = self.data.write().await;
+        data.last_check = ntp_now;
+        data.last_time = ntp_now;
+        data.last_offset = offset;
+        debug!("Done updating NTP time: {}", ntp_now);
+        Ok(ntp_now)
+    }
 }
+
+pub const NTP_UNIX_EPOCH: i64 = 2_208_988_800;
 
 async fn resolve_server(server: &str) -> Result<SocketAddr, ClockError> {
     if let Ok(addr) = server.parse::<SocketAddr>() {
