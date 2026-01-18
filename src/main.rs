@@ -8,7 +8,9 @@ async fn main() -> Result<(), ClockError> {
         println!("Debug mode is ON");
     }
 
-    let client = NtpClient::new(&cliopts.ntp_server).expect("Failed to create NTP client");
+    let client = NtpClient::new(&cliopts.ntp_server)
+        .await
+        .expect("Failed to create NTP client");
     let time = client.get_time().await?;
     println!("NTP time from {}: {}", cliopts.ntp_server, time);
 
