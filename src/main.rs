@@ -13,7 +13,7 @@
 use std::process::ExitCode;
 
 use log::LevelFilter;
-use ntp_clock::{cli::Cli, prelude::*};
+use ntp_clock::{cli::Cli, clock::hand_angles, prelude::*};
 
 #[tokio::main]
 async fn main() -> Result<(), ExitCode> {
@@ -47,6 +47,15 @@ async fn main() -> Result<(), ExitCode> {
         time,
         offset.whole_nanoseconds()
     );
+    if cliopts.show_angles {
+        let angles = hand_angles(time);
+        info!(
+            "Hand angles (deg): hour={}, minute={}, second={}",
+            angles.hour.round() as i64,
+            angles.minute.round() as i64,
+            angles.second.round() as i64
+        );
+    }
 
     Ok(())
 }
