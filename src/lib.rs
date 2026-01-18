@@ -11,6 +11,7 @@
 #![deny(clippy::trivially_copy_pass_by_ref)]
 
 pub mod cli;
+pub mod clock;
 pub mod prelude;
 
 use std::process::ExitCode;
