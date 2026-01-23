@@ -19,6 +19,9 @@ test:
 fmt:
     cargo fmt --all
 
+build:
+    ./ntp-clock-hardware/scripts/hardware-build.sh
+
 set positional-arguments
 
 @coverage_inner *args='':

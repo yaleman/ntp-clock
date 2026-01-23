@@ -12,40 +12,35 @@
 
 use std::process::ExitCode;
 
-use log::LevelFilter;
-use ntp_clock::{cli::Cli, clock::hand_angles, prelude::*};
-
-#[tokio::main]
-async fn main() -> Result<(), ExitCode> {
+#[cfg(feature = "cli")]
+fn cli_main() -> Result<(), ExitCode> {
+    use ntp_clock::{cli::Cli, clock::hand_angles, prelude::*};
     let cliopts = Cli::parse();
 
-    let level = if cliopts.debug {
-        LevelFilter::Debug
-    } else {
-        LevelFilter::Info
-    };
-    #[allow(clippy::expect_used)]
-    simple_logger::SimpleLogger::new()
-        .with_level(level)
-        .without_timestamps()
-        .init()
-        .expect("Failed to initialize logger");
+    // let level = if cliopts.debug {
+    //     LevelFilter::Debug
+    // } else {
+    //     LevelFilter::Info
+    // };
+    // #[allow(clippy::expect_used)]
+    // simple_logger::SimpleLogger::new()
+    //     .with_level(level)
+    //     .without_timestamps()
+    //     .init()
+    //     .expect("Failed to initialize logger");
 
-    let client = NtpClient::new(&cliopts.ntp_server)
-        .await
-        .inspect_err(|err| {
-            error!("Failed to create NTP client: {err}");
-        })?;
+    let mut client = NtpClient::new(&cliopts.ntp_server).inspect_err(|err| {
+        error!("Failed to create NTP client: {err}");
+    })?;
     let time = client
         .get_time()
-        .await
         .inspect_err(|err| error!("Failed to run update: {err}"))?;
-    let offset = client.get_offset().await;
+    let offset = client.get_offset();
+    let seconds = time / 1_000_000_000;
+    let nanos = time % 1_000_000_000;
     info!(
-        "NTP time from {}: {} (Offset: {}ns)",
-        cliopts.ntp_server,
-        time,
-        offset.whole_nanoseconds()
+        "NTP time from {}: {}.{:09} UTC (Offset: {}ns)",
+        cliopts.ntp_server, seconds, nanos, offset
     );
     if cliopts.show_angles {
         let angles = hand_angles(time);
@@ -56,6 +51,13 @@ async fn main() -> Result<(), ExitCode> {
             angles.second.round() as i64
         );
     }
+    Ok(())
+}
 
+fn main() -> Result<(), ExitCode> {
+    #[cfg(feature = "cli")]
+    cli_main()?;
+    #[cfg(not(feature = "cli"))]
+    eprintln!("This binary was built without CLI support.");
     Ok(())
 }

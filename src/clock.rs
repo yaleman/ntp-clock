@@ -1,5 +1,3 @@
-use time::OffsetDateTime;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandAngles {
     pub hour: f64,
@@ -18,28 +16,37 @@ impl HandAngles {
 
     pub fn normalize_degrees(self) -> HandAngles {
         HandAngles {
-            hour: self.hour.rem_euclid(360.0),
-            minute: self.minute.rem_euclid(360.0),
-            second: self.second.rem_euclid(360.0),
+            hour: normalize(self.hour, 360.0),
+            minute: normalize(self.minute, 360.0),
+            second: normalize(self.second, 360.0),
         }
     }
 
     pub fn normalize_radians(self) -> HandAngles {
         HandAngles {
-            hour: self.hour.rem_euclid(std::f64::consts::TAU),
-            minute: self.minute.rem_euclid(std::f64::consts::TAU),
-            second: self.second.rem_euclid(std::f64::consts::TAU),
+            hour: normalize(self.hour, core::f64::consts::TAU),
+            minute: normalize(self.minute, core::f64::consts::TAU),
+            second: normalize(self.second, core::f64::consts::TAU),
         }
     }
 }
 
-pub fn hand_angles(time: OffsetDateTime) -> HandAngles {
-    let hour = time.hour() % 12;
-    let minute = time.minute();
-    let second = time.second();
-    let nanos = time.nanosecond();
+fn normalize(value: f64, modulo: f64) -> f64 {
+    let mut wrapped = value % modulo;
+    if wrapped < 0.0 {
+        wrapped += modulo;
+    }
+    wrapped
+}
 
-    let seconds = second as f64 + (nanos as f64 / 1_000_000_000.0);
+pub fn hand_angles(unix_nanos: u64) -> HandAngles {
+    let total_seconds = unix_nanos / 1_000_000_000;
+    let nanos = (unix_nanos % 1_000_000_000) as f64;
+
+    let hour = (total_seconds / 3600) % 12;
+    let minute = (total_seconds / 60) % 60;
+    let second = total_seconds % 60;
+    let seconds = second as f64 + (nanos / 1_000_000_000.0);
     let minutes = minute as f64 + (seconds / 60.0);
     let hours = hour as f64 + (minutes / 60.0);
 
@@ -51,19 +58,18 @@ pub fn hand_angles(time: OffsetDateTime) -> HandAngles {
     .normalize_degrees()
 }
 
-pub fn hand_angles_radians(time: OffsetDateTime) -> HandAngles {
-    hand_angles(time).to_radians().normalize_radians()
+pub fn hand_angles_radians(unix_nanos: u64) -> HandAngles {
+    hand_angles(unix_nanos).to_radians().normalize_radians()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use time::macros::datetime;
 
     #[test]
     fn hand_angles_known_time() {
-        let time = datetime!(2025-01-01 03:15:00 +0);
-        let angles = hand_angles(time);
+        let unix_nanos = 1_735_701_300_000_000_000u64;
+        let angles = hand_angles(unix_nanos);
         assert!((angles.hour - 97.5).abs() < 1e-9);
         assert!((angles.minute - 90.0).abs() < 1e-9);
         assert!((angles.second - 0.0).abs() < 1e-9);
