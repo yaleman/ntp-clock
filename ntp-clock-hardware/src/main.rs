@@ -1,53 +1,227 @@
 #![no_std]
 #![no_main]
 
+use core::str::FromStr;
+
+use cyw43::{Control, JoinOptions};
+use cyw43_pio::{DEFAULT_CLOCK_DIVIDER, PioSpi};
+use embassy_executor::Spawner;
+use embassy_net::udp::{PacketMetadata, UdpSocket};
+use embassy_net::{Config, Ipv4Address, StackResources};
+use embassy_rp::bind_interrupts;
+use embassy_rp::clocks::clk_sys_freq;
+use embassy_rp::gpio::{Input, Level, Output, Pull};
+use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_rp::pwm::{Config as PwmConfig, Pwm, SetDutyCycle};
+use embassy_time::{Duration, Timer};
+use fixed::traits::ToFixed;
+use static_cell::StaticCell;
 use panic_halt as _;
 
-#[cfg(target_arch = "arm")]
-use cortex_m_rt::entry;
-#[cfg(target_arch = "riscv32")]
-use riscv_rt::entry;
-use ntp_clock_hardware::hardware::{PwmServoController, ServoPwmConfig};
-use ntp_clock_hardware::{ClockMechanism, HandAnglesDeg, LimitSwitches};
+use ntp_clock::clock::hand_angles;
+use ntp_clock::parse_ntp_packet;
+use ntp_clock_hardware::hardware::{PwmServoController, ServoPwmConfig, angles_to_hand_degrees};
+use ntp_clock_hardware::{ClockMechanism, LimitSwitches};
 
-use cyw43 as _;
-use cyw43_pio as _;
-use rp235x_hal as _;
+const NTP_PORT: u16 = 123;
+const NTP_PACKET_LEN: usize = 48;
+const PWM_TARGET_HZ: u32 = 50;
+const PWM_DIVIDER: u32 = 125;
+const DEFAULT_NTP_SERVER: Ipv4Address = Ipv4Address::new(129, 6, 15, 28);
 
-#[entry]
-fn main() -> ! {
-    // TODO: Initialize RP2350 clocks, GPIOs, PWM, and CYW43439 Wi-Fi via cyw43.
-    let servo_config = ServoPwmConfig::sg90_50hz();
-    let controller = PwmServoController::new(
-        |_duty| Ok::<_, core::convert::Infallible>(()),
-        |_duty| Ok::<_, core::convert::Infallible>(()),
-        servo_config,
-        65_535,
-        65_535,
+const WIFI_SSID: &str = match option_env!("WIFI_SSID") {
+    Some(value) => value,
+    None => "",
+};
+const WIFI_PASSWORD: &str = match option_env!("WIFI_PASSWORD") {
+    Some(value) => value,
+    None => "",
+};
+const NTP_SERVER_ENV: &str = match option_env!("NTP_SERVER") {
+    Some(value) => value,
+    None => "",
+};
+
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+});
+
+#[embassy_executor::task]
+async fn wifi_task(
+    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
+) {
+    runner.run().await;
+}
+
+#[embassy_executor::task]
+async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) {
+    runner.run().await;
+}
+
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    let p = embassy_rp::init(Default::default());
+
+    let mut pio = Pio::new(p.PIO0, Irqs);
+    let power = Output::new(p.PIN_23, Level::Low);
+    let cs = Output::new(p.PIN_25, Level::High);
+    let spi = PioSpi::new(
+        &mut pio.common,
+        pio.sm0,
+        DEFAULT_CLOCK_DIVIDER,
+        pio.irq0,
+        cs,
+        p.PIN_24,
+        p.PIN_29,
+        p.DMA_CH0,
     );
 
-    let switches = DummyLimitSwitches::default();
+    static STATE: StaticCell<cyw43::State> = StaticCell::new();
+    let state = STATE.init(cyw43::State::new());
+    let firmware = include_bytes!("../firmware/43439A0.bin");
+    let clm = include_bytes!("../firmware/43439A0_clm.bin");
+
+    let (net_device, mut control, runner) = cyw43::new(state, power, spi, firmware).await;
+    let _ = spawner.spawn(wifi_task(runner));
+    control.init(clm).await;
+
+    if !WIFI_SSID.is_empty() && !WIFI_PASSWORD.is_empty() {
+        connect_wifi(&mut control).await;
+    } else {
+        idle_missing_wifi().await;
+    }
+
+    static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
+    let resources = RESOURCES.init(StackResources::new());
+    let config = Config::dhcpv4(Default::default());
+    let seed = 0x2f3a_9b5d;
+    let (stack, runner) = embassy_net::new(net_device, config, resources, seed);
+    let _ = spawner.spawn(net_task(runner));
+
+    stack.wait_config_up().await;
+
+    let mut rx_meta = [PacketMetadata::EMPTY; 8];
+    let mut rx_buffer = [0u8; 256];
+    let mut tx_meta = [PacketMetadata::EMPTY; 8];
+    let mut tx_buffer = [0u8; 256];
+    let mut socket = UdpSocket::new(stack, &mut rx_meta, &mut rx_buffer, &mut tx_meta, &mut tx_buffer);
+    if socket.bind(0).is_err() {
+        loop {
+            Timer::after(Duration::from_secs(60)).await;
+        }
+    }
+
+    let server = ntp_server();
+
+    let pwm_top = pwm_top_from_sysclk();
+    let mut pwm_config = PwmConfig::default();
+    pwm_config.divider = (PWM_DIVIDER as u16).to_fixed();
+    pwm_config.top = pwm_top;
+
+    let mut hour_pwm = Pwm::new_output_a(p.PWM_SLICE1, p.PIN_2, pwm_config.clone());
+    let mut minute_pwm = Pwm::new_output_a(p.PWM_SLICE2, p.PIN_4, pwm_config);
+    let servo_config = ServoPwmConfig::sg90_50hz();
+    let hour_max = hour_pwm.max_duty_cycle() as u32;
+    let minute_max = minute_pwm.max_duty_cycle() as u32;
+
+    let controller = PwmServoController::new(
+        |duty| hour_pwm.set_duty_cycle(duty.min(hour_max) as u16),
+        |duty| minute_pwm.set_duty_cycle(duty.min(minute_max) as u16),
+        servo_config,
+        hour_max,
+        minute_max,
+    );
+    let switches =
+        LimitSwitchPins::new(Input::new(p.PIN_6, Pull::Up), Input::new(p.PIN_7, Pull::Up));
     let mut clock = ClockMechanism::new(controller, switches);
 
     loop {
-        let angles = HandAnglesDeg {
-            hour: 90.0,
-            minute: 180.0,
-        };
-        let _ = clock.apply_hand_angles(angles);
-        clock.update_zeroing();
+        if let Some(ntp_time) = query_ntp(&mut socket, server).await {
+            let angles = hand_angles(ntp_time);
+            let degrees = angles_to_hand_degrees(angles);
+            let _ = clock.apply_hand_angles(degrees);
+            clock.update_zeroing();
+        }
+        Timer::after(Duration::from_secs(60)).await;
     }
 }
 
-#[derive(Default)]
-struct DummyLimitSwitches;
+async fn connect_wifi(control: &mut Control<'static>) {
+    loop {
+        let options = JoinOptions::new(WIFI_PASSWORD.as_bytes());
+        if control.join(WIFI_SSID, options).await.is_ok() {
+            break;
+        }
+        Timer::after(Duration::from_secs(5)).await;
+    }
+}
 
-impl LimitSwitches for DummyLimitSwitches {
+async fn idle_missing_wifi() -> ! {
+    loop {
+        Timer::after(Duration::from_secs(60)).await;
+    }
+}
+
+async fn query_ntp(socket: &mut UdpSocket<'_>, server: Ipv4Address) -> Option<u64> {
+    let mut request = [0u8; NTP_PACKET_LEN];
+    request[0] = 0x1b;
+    let _ = socket.send_to(&request, (server, NTP_PORT)).await.ok()?;
+    let mut response = [0u8; NTP_PACKET_LEN];
+    let (len, _) = socket.recv_from(&mut response).await.ok()?;
+    parse_ntp_packet(&response[..len], 0)
+        .map(|(timestamp, _)| timestamp)
+        .ok()
+}
+
+fn ntp_server() -> Ipv4Address {
+    parse_ipv4(NTP_SERVER_ENV).unwrap_or(DEFAULT_NTP_SERVER)
+}
+
+fn parse_ipv4(input: &str) -> Option<Ipv4Address> {
+    let mut octets = [0u8; 4];
+    let mut parts = input.split('.');
+    for slot in &mut octets {
+        let part = parts.next()?;
+        if part.is_empty() {
+            return None;
+        }
+        *slot = u8::from_str(part).ok()?;
+    }
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(Ipv4Address::new(octets[0], octets[1], octets[2], octets[3]))
+}
+
+fn pwm_top_from_sysclk() -> u16 {
+    let sys_hz = clk_sys_freq();
+    let denom = PWM_DIVIDER.saturating_mul(PWM_TARGET_HZ);
+    let top = sys_hz.saturating_div(denom).saturating_sub(1);
+    top.min(u16::MAX as u32) as u16
+}
+
+struct LimitSwitchPins<'d> {
+    hour: Input<'d>,
+    minute: Input<'d>,
+}
+
+impl<'d> LimitSwitchPins<'d> {
+    fn new(hour: Input<'d>, minute: Input<'d>) -> Self {
+        Self { hour, minute }
+    }
+
+    fn is_triggered(pin: &Input<'d>) -> bool {
+        pin.is_low()
+    }
+}
+
+impl<'d> LimitSwitches for LimitSwitchPins<'d> {
     fn hour_triggered(&self) -> bool {
-        false
+        Self::is_triggered(&self.hour)
     }
 
     fn minute_triggered(&self) -> bool {
-        false
+        Self::is_triggered(&self.minute)
     }
 }

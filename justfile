@@ -6,6 +6,7 @@ default:
 
 # run the linter, tests, and format the code
 check: clippy test fmt
+    just check --workspace --all-features
 
 # run clippy
 clippy:
@@ -19,8 +20,11 @@ test:
 fmt:
     cargo fmt --all
 
-build:
+build: firmware
     ./ntp-clock-hardware/scripts/hardware-build.sh
+
+firmware:
+    ./ntp-clock-hardware/scripts/download-firmware.sh
 
 set positional-arguments
 

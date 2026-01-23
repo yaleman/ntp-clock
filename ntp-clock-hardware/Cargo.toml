@@ -15,6 +15,12 @@ hardware = [
     "rp-pac",
     "embedded-hal",
     "embedded-alloc",
+    "embassy-executor",
+    "embassy-net",
+    "embassy-time",
+    "embassy-time-queue-utils",
+    "static_cell",
+    "fixed",
 ]
 
 [[bin]]
@@ -45,7 +51,23 @@ smoltcp = { version = "0.12.0", default-features = false, features = [
 rp-pac = { version = "7.0.0", features = ["rp235x", "rt"], optional = true }
 embedded-hal = { version = "1.0.0", optional = true }
 embedded-alloc = { version = "0.7.0", optional = true }
-embassy-rp = { version = "0.9.0", features = ["rp235xa", "time-driver", "chrono"], optional = true }
+embassy-rp = { version = "0.9.0", features = [
+    "chrono",
+    "critical-section-impl",
+    "rp235xa",
+    "time-driver",
+], optional = true }
+embassy-executor = { version = "0.7.0", features = ["arch-cortex-m", "executor-thread"], optional = true }
+embassy-net = { version = "0.8.0", optional = true, features = [
+    "dhcpv4",
+    "medium-ethernet",
+    "proto-ipv4",
+    "udp",
+] }
+embassy-time = { version = "0.5.0", optional = true }
+embassy-time-queue-utils = { version = "0.3.0", optional = true, features = ["generic-queue-8"] }
+static_cell = { version = "2.1.0", optional = true }
+fixed = { version = "1.28.0", default-features = false, optional = true }
 
 [target.'cfg(target_arch = "arm")'.dependencies]
 cortex-m = "0.7.7"
