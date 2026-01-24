@@ -1,5 +1,7 @@
 #![no_std]
 
+pub mod usb;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct HandAnglesDeg {
     pub hour: f32,

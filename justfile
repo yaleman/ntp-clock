@@ -1,20 +1,22 @@
 git := require("git")
 cargo := require("cargo")
+build_target := "thumbv8m.main-none-eabihf"
 
 default:
     just --list
 
 # run the linter, tests, and format the code
 check: clippy test fmt
-    just check --workspace --all-features
+    cargo check -p ntp-clock-hardware --all-features --target {{build_target}}
+    find . -name '*.sh' | xargs shellcheck
 
 # run clippy
 clippy:
-    cargo clippy --all-targets --quiet --workspace
+    cargo clippy --quiet -p ntp-clock-hardware --target {{build_target}} --bins
 
 # run rust tests
 test:
-    cargo test --quiet --workspace
+    cargo test --quiet -p ntp-clock
 
 # format the rust code
 fmt:
@@ -23,11 +25,15 @@ fmt:
 build: firmware
     ./ntp-clock-hardware/scripts/hardware-build.sh
 
+flash: build
+    ./ntp-clock-hardware/scripts/flash-pico.sh
+
 firmware:
     ./ntp-clock-hardware/scripts/download-firmware.sh
 
 set positional-arguments
 
+[private]
 @coverage_inner *args='':
     cargo tarpaulin --workspace --exclude-files=src/main.rs $@
 

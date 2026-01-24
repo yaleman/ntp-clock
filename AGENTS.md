@@ -1,5 +1,13 @@
 # Repository Guidelines
 
+You're not done with a task until `just check` and `just build` finishes without errors or warnings.
+
+Unless explicitly told to do so, stubbing out things to finish later is explicitly banned.
+
+If the task is taking too long or you can't work it out, stop and ask for clarification or assistance.
+
+Stop making things overly extensible - get it working to spec first and MAYBE offer to make it flexible if it's obvious this could be made better.
+
 ## Project Structure & Module Organization
 
 - `src/main.rs` contains the CLI entry point and wires up the async runtime.
@@ -47,3 +55,4 @@
 - The NTP server can be provided as a positional CLI argument or via `NTP_SERVER`.
 - Network access is required when real NTP querying is implemented; current logic is a placeholder.
 - Always use the `cargo` commands for managing packages and enable networking when doing so.
+- YOU ARE EXPLICITLY BANNED FROM MANUALLY EDITING Cargo.toml to change package definitions. USE CARGO THAT IS WHAT IT IS FOR.

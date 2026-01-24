@@ -16,8 +16,9 @@ use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pwm::{Config as PwmConfig, Pwm, SetDutyCycle};
 use embassy_time::{Duration, Timer};
 use fixed::traits::ToFixed;
-use static_cell::StaticCell;
+
 use panic_halt as _;
+use static_cell::StaticCell;
 
 use ntp_clock::clock::hand_angles;
 use ntp_clock::parse_ntp_packet;
@@ -29,6 +30,7 @@ const NTP_PACKET_LEN: usize = 48;
 const PWM_TARGET_HZ: u32 = 50;
 const PWM_DIVIDER: u32 = 125;
 const DEFAULT_NTP_SERVER: Ipv4Address = Ipv4Address::new(129, 6, 15, 28);
+const USB_ONLY: bool = option_env!("USB_ONLY").is_some();
 
 const WIFI_SSID: &str = match option_env!("WIFI_SSID") {
     Some(value) => value,
@@ -43,7 +45,7 @@ const NTP_SERVER_ENV: &str = match option_env!("NTP_SERVER") {
     None => "",
 };
 
-bind_interrupts!(struct Irqs {
+bind_interrupts!(struct PioIrqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
 
@@ -63,7 +65,27 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    let mut pio = Pio::new(p.PIO0, Irqs);
+    if USB_ONLY {
+        log::info!("USB-only firmware mode");
+        usb_only_main(spawner, p).await;
+    } else {
+        full_main(spawner, p).await;
+    }
+}
+
+async fn usb_only_main(spawner: Spawner, p: embassy_rp::Peripherals) -> ! {
+    let usb = p.USB;
+    ntp_clock_hardware::usb::init_usb_logging(&spawner, usb);
+    loop {
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
+    let usb = p.USB;
+    ntp_clock_hardware::usb::init_usb_logging(&spawner, usb);
+
+    let mut pio = Pio::new(p.PIO0, PioIrqs);
     let power = Output::new(p.PIN_23, Level::Low);
     let cs = Output::new(p.PIN_25, Level::High);
     let spi = PioSpi::new(
@@ -100,12 +122,19 @@ async fn main(spawner: Spawner) {
     let _ = spawner.spawn(net_task(runner));
 
     stack.wait_config_up().await;
+    log::info!("DHCP configuration acquired");
 
     let mut rx_meta = [PacketMetadata::EMPTY; 8];
     let mut rx_buffer = [0u8; 256];
     let mut tx_meta = [PacketMetadata::EMPTY; 8];
     let mut tx_buffer = [0u8; 256];
-    let mut socket = UdpSocket::new(stack, &mut rx_meta, &mut rx_buffer, &mut tx_meta, &mut tx_buffer);
+    let mut socket = UdpSocket::new(
+        stack,
+        &mut rx_meta,
+        &mut rx_buffer,
+        &mut tx_meta,
+        &mut tx_buffer,
+    );
     if socket.bind(0).is_err() {
         loop {
             Timer::after(Duration::from_secs(60)).await;
@@ -166,7 +195,7 @@ async fn idle_missing_wifi() -> ! {
 async fn query_ntp(socket: &mut UdpSocket<'_>, server: Ipv4Address) -> Option<u64> {
     let mut request = [0u8; NTP_PACKET_LEN];
     request[0] = 0x1b;
-    let _ = socket.send_to(&request, (server, NTP_PORT)).await.ok()?;
+    socket.send_to(&request, (server, NTP_PORT)).await.ok()?;
     let mut response = [0u8; NTP_PACKET_LEN];
     let (len, _) = socket.recv_from(&mut response).await.ok()?;
     parse_ntp_packet(&response[..len], 0)

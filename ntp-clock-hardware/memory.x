@@ -6,12 +6,20 @@ MEMORY
 }
 
 SECTIONS {
+    .start_block : ALIGN(4)
+    {
+        KEEP(*(.start_block));
+    } > FLASH
+
+} INSERT AFTER .vector_table;
+
+SECTIONS {
     .boot_info : ALIGN(4)
     {
         KEEP(*(.boot_info));
     } > FLASH
 
-} INSERT AFTER .vector_table;
+} INSERT AFTER .start_block;
 
 _stext = ADDR(.boot_info) + SIZEOF(.boot_info);
 

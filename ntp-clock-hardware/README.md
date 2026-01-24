@@ -33,20 +33,20 @@ in RP2350/Wi-Fi support.
 
 ## Flash
 
-Flash by copying a UF2 to the mounted Pico 2 W boot volume:
+Flash by loading the firmware onto the mounted Pico 2 W:
 
 ```bash
 export WIFI_SSID=your-ssid
 export WIFI_PASSWORD=your-password
 export NTP_SERVER=129.6.15.28     # optional IPv4 literal
-PICO2W_MOUNT=/Volumes/RPI-RP2 ./scripts/hardware-flash.sh
+./scripts/flash-pico.sh
 ```
 
 Optional settings:
 
 - `PICO2W_TARGET` (default `thumbv8m.main-none-eabihf`)
 - `PICO2W_PROFILE` (default `release`)
-- `PICO2W_MOUNT` (default `/Volumes/RPI-RP2`)
+- `PICO_MOUNT_POINT` (default `/Volumes/RP2350`)
 
 ## Wiring Notes
 
@@ -76,3 +76,18 @@ The script fetches:
 - `43439A0_clm.bin`
 
 It verifies the SHA-256 hashes and will fail if they do not match.
+
+## USB Serial Logging
+
+This firmware is built on the Embassy stack (`embassy-rp`, `embassy-executor`,
+`embassy-net`) and now enumerates a USB CDC-ACM device for logs when built with
+the `hardware` feature.
+
+To view logs on macOS:
+
+```bash
+screen /dev/cu.usbmodem* 115200
+```
+
+Logging goes through the `log` crate. Messages are queued into a small buffer and
+written to the CDC endpoint; if the buffer fills, newer messages are dropped.
