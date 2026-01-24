@@ -17,6 +17,7 @@ use embassy_rp::pwm::{Config as PwmConfig, Pwm, SetDutyCycle};
 use embassy_time::{Duration, Timer};
 use fixed::traits::ToFixed;
 
+use ntp_clock_hardware::constants::NETWORK_DETAILS_LOG_DELAY_SECS;
 use panic_halt as _;
 use static_cell::StaticCell;
 
@@ -165,21 +166,42 @@ async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
         LimitSwitchPins::new(Input::new(p.PIN_6, Pull::Up), Input::new(p.PIN_7, Pull::Up));
     let mut clock = ClockMechanism::new(controller, switches);
 
+    let mut tick = 0u32;
     loop {
-        if let Some(ntp_time) = query_ntp(&mut socket, server).await {
-            let angles = hand_angles(ntp_time);
-            let degrees = angles_to_hand_degrees(angles);
-            let _ = clock.apply_hand_angles(degrees);
-            clock.update_zeroing();
+        if let Some(config) = stack.config_v4() {
+            log::info!(
+                "Net config: addr={}, gateway={:?}, dns={:?}",
+                config.address,
+                config.gateway,
+                config.dns_servers
+            );
+        } else {
+            log::info!("Net config: DHCP not ready");
         }
-        Timer::after(Duration::from_secs(60)).await;
+
+        if tick.is_multiple_of(4) {
+            log::info!("Running NTP update against {}", server);
+            if let Some(ntp_time) = query_ntp(&mut socket, server).await {
+                log::info!("NTP update successful: {}", ntp_time);
+                let angles = hand_angles(ntp_time);
+                let degrees = angles_to_hand_degrees(angles);
+                let _ = clock.apply_hand_angles(degrees);
+                clock.update_zeroing();
+            } else {
+                log::warn!("NTP update failed");
+            }
+        }
+        tick = tick.wrapping_add(1);
+        Timer::after(Duration::from_secs(NETWORK_DETAILS_LOG_DELAY_SECS)).await;
     }
 }
 
 async fn connect_wifi(control: &mut Control<'static>) {
     loop {
         let options = JoinOptions::new(WIFI_PASSWORD.as_bytes());
+        log::info!("Joining WiFi SSID '{}'", WIFI_SSID);
         if control.join(WIFI_SSID, options).await.is_ok() {
+            log::info!("WiFi joined");
             break;
         }
         Timer::after(Duration::from_secs(5)).await;

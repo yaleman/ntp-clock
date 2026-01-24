@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod constants;
 pub mod usb;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]

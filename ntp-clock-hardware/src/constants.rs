@@ -1,0 +1,1 @@
+pub const NETWORK_DETAILS_LOG_DELAY_SECS: u64 = 60;

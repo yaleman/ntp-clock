@@ -27,6 +27,8 @@ build: firmware
 
 flash: build
     ./ntp-clock-hardware/scripts/flash-pico.sh
+    ./ntp-clock-hardware/scripts/screen.sh
+
 
 firmware:
     ./ntp-clock-hardware/scripts/download-firmware.sh
