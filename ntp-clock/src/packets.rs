@@ -1,4 +1,4 @@
-use crate::{ClockError, constants::NTP_MIN_PACKET_LEN};
+use crate::{constants::NTP_MIN_PACKET_LEN, error::ClockError};
 
 use heapless::string::String as HeaplessString;
 use packed_struct::prelude::*;

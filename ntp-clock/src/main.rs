@@ -12,11 +12,11 @@
 
 use std::process::ExitCode;
 
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+#[cfg(any(target_family = "unix", target_family = "windows"))]
 fn cli_main() -> Result<(), ExitCode> {
-    use ntp_clock::{cli::Cli, clock::hand_angles, prelude::*};
-
+    use clap::Parser;
     use ntp_clock::packets::NtpResponse;
+    use ntp_clock::{cli::Cli, clock::hand_angles, prelude::*};
 
     let cliopts = Cli::parse();
 

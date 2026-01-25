@@ -1,4 +1,4 @@
-use ntp_clock::{ClockError, packets::NtpResponse, parse_ntp_packet};
+use ntp_clock::{error::ClockError, packets::NtpResponse, parse_ntp_packet};
 use packed_struct::PackedStruct;
 
 const UNIX_NANOS_SAMPLE: u64 = 1_735_689_600_000_000_000;

@@ -10,7 +10,6 @@ authors = { workspace = true }
 [features]
 default = ["std"]
 std = []
-cli = ["std", "clap", "simple_logger"]
 
 [dependencies]
 log = "0.4.29"
@@ -19,5 +18,5 @@ heapless = { version = "0.9.2", default-features = false }
 
 
 [target.'cfg(any(target_family = "unix", target_family = "windows"))'.dependencies]
-simple_logger = { version = "5.1.0", optional = true }
-clap = { version = "4.5.54", features = ["derive", "env"], optional = true }
+simple_logger = { version = "5.1.0" }
+clap = { version = "4.5.54", features = ["derive", "env"] }
