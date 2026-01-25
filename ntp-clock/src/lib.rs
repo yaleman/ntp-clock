@@ -31,7 +31,7 @@ use packed_struct::PackedStructSlice;
 use prelude::*;
 
 use crate::constants::NTP_MIN_PACKET_LEN;
-use crate::packets::NtpResponse;
+use crate::packets::NtpPacket;
 
 #[cfg(feature = "std")]
 pub struct NtpData {
@@ -39,7 +39,7 @@ pub struct NtpData {
     pub last_check: u64,
 
     /// The last NTP response we received
-    pub last_response: Option<NtpResponse>,
+    pub last_response: Option<NtpPacket>,
 }
 
 #[cfg(feature = "std")]
@@ -55,7 +55,7 @@ impl NtpData {
 pub struct NtpClient {
     pub server: SocketAddr,
     pub time_validity: Duration,
-    pub last_response: Option<NtpResponse>,
+    pub last_response: Option<NtpPacket>,
 }
 
 #[cfg(feature = "std")]
@@ -76,7 +76,7 @@ impl NtpClient {
             None => false,
             Some(response) => {
                 let now = unix_nanos_now();
-                let elapsed = now.saturating_sub(response.ref_time);
+                let elapsed = now.saturating_sub(response.transmit_time);
                 elapsed < self.time_validity.as_nanos() as u64
             }
         }
@@ -95,18 +95,27 @@ impl NtpClient {
     pub fn update(&mut self) -> Result<u64, ClockError> {
         use packed_struct::PackedStruct;
 
-        use crate::{constants::NTP_MIN_PACKET_LEN, packets::NtpRequestPacket};
+        use crate::{constants::NTP_MIN_PACKET_LEN, packets::NtpPacket};
 
         debug!("Updating...");
         let socket = UdpSocket::bind("0.0.0.0:0").map_err(|_| ClockError::NetworkError)?;
 
-        let request: [u8; 48] = NtpRequestPacket::default().pack().map_err(|err| {
+        let transmit_time = unix_nanos_now();
+        let ntp_transmit_time = unix_nanos_to_ntp_timestamp(transmit_time);
+        let request = NtpPacket::request().with_transmit_time(ntp_transmit_time);
+        let request = request.pack().map_err(|err| {
             #[cfg(feature = "std")]
             error!("Failed to pack NTP request packet: {:?}", err);
             ClockError::Io
         })?;
+
+        // trim request to NTP_MIN_PACKET_LEN
+        if request.len() < NTP_MIN_PACKET_LEN {
+            return Err(ClockError::Io);
+        }
+        let request = &request[..NTP_MIN_PACKET_LEN];
         socket
-            .send_to(&request, self.server)
+            .send_to(request, self.server)
             .map_err(|_| ClockError::NetworkError)?;
 
         let mut response = [0u8; NTP_MIN_PACKET_LEN];
@@ -132,8 +141,32 @@ impl NtpClient {
 
 pub const NTP_UNIX_EPOCH: i64 = 2_208_988_800;
 
+#[cfg(feature = "std")]
+fn unix_nanos_to_ntp_timestamp(unix_nanos: u64) -> u64 {
+    let unix_seconds = (unix_nanos / 1_000_000_000) as i128;
+    let nanos = (unix_nanos % 1_000_000_000) as i128;
+    let ntp_seconds = unix_seconds + NTP_UNIX_EPOCH as i128;
+    let fraction = (nanos << 32) / 1_000_000_000i128;
+    ((ntp_seconds as u64) << 32) | (fraction as u64)
+}
+
+fn ntp_timestamp_to_unix_nanos(ntp_timestamp: u64) -> u64 {
+    if ntp_timestamp == 0 {
+        return 0;
+    }
+    let seconds = (ntp_timestamp >> 32) as i128;
+    let fraction = (ntp_timestamp & 0xffff_ffff) as i128;
+    let unix_seconds = seconds - NTP_UNIX_EPOCH as i128;
+    if unix_seconds < 0 {
+        return 0;
+    }
+    let nanos = (fraction * 1_000_000_000i128) >> 32;
+    let unix_nanos = unix_seconds * 1_000_000_000i128 + nanos;
+    unix_nanos as u64
+}
+
 /// Returns the NTP time and offset in nanoseconds.
-pub fn parse_ntp_packet(packet: &[u8], _local_time: u64) -> Result<NtpResponse, ClockError> {
+pub fn parse_ntp_packet(packet: &[u8], _local_time: u64) -> Result<NtpPacket, ClockError> {
     if packet.len() < NTP_MIN_PACKET_LEN {
         return Err(ClockError::PacketTooShort);
     }
@@ -150,11 +183,16 @@ pub fn parse_ntp_packet(packet: &[u8], _local_time: u64) -> Result<NtpResponse, 
     }
     let mut result = [0u8; 60];
     result[..packet.len()].copy_from_slice(packet);
-    let res = NtpResponse::unpack_from_slice(&result).map_err(|_| ClockError::InvalidResponse)?;
+    let mut res = NtpPacket::unpack_from_slice(&result).map_err(|_| ClockError::InvalidResponse)?;
 
     if res.version < 1 || res.version > 4 {
         return Err(ClockError::InvalidVersion);
     }
+
+    res.ref_time = ntp_timestamp_to_unix_nanos(res.ref_time);
+    res.origin_time = ntp_timestamp_to_unix_nanos(res.origin_time);
+    res.recv_time = ntp_timestamp_to_unix_nanos(res.recv_time);
+    res.transmit_time = ntp_timestamp_to_unix_nanos(res.transmit_time);
 
     Ok(res)
 }
@@ -170,7 +208,9 @@ pub fn unix_nanos_now() -> u64 {
 #[cfg(feature = "std")]
 fn resolve_server(server: &str) -> Result<SocketAddr, ClockError> {
     use std::net::ToSocketAddrs;
-    let addrs: Vec<SocketAddr> = (server, 123).to_socket_addrs()?.collect();
+
+    use crate::constants::NTP_PORT;
+    let addrs: Vec<SocketAddr> = (server, NTP_PORT).to_socket_addrs()?.collect();
     if let Some(addr) = addrs.first() {
         Ok(*addr)
     } else {

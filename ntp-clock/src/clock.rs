@@ -1,4 +1,4 @@
-use crate::packets::NtpResponse;
+use crate::packets::NtpPacket;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandAngles {
@@ -41,7 +41,7 @@ fn normalize(value: f64, modulo: f64) -> f64 {
     wrapped
 }
 
-pub fn hand_angles(ntp_response: &NtpResponse) -> HandAngles {
+pub fn hand_angles(ntp_response: &NtpPacket) -> HandAngles {
     let total_seconds = ntp_response.ref_time / 1_000_000_000;
     let nanos = (ntp_response.ref_time % 1_000_000_000) as f64;
 
@@ -60,7 +60,7 @@ pub fn hand_angles(ntp_response: &NtpResponse) -> HandAngles {
     .normalize_degrees()
 }
 
-pub fn hand_angles_radians(ntp_response: &NtpResponse) -> HandAngles {
+pub fn hand_angles_radians(ntp_response: &NtpPacket) -> HandAngles {
     hand_angles(ntp_response).to_radians().normalize_radians()
 }
 
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn hand_angles_known_time() {
-        let ntp_response = NtpResponse::from_nanos(1_735_701_300_000_000_000u64);
+        let ntp_response = NtpPacket::from_nanos(1_735_701_300_000_000_000u64);
         let angles = hand_angles(&ntp_response);
         assert!((angles.hour - 97.5).abs() < 1e-9);
         assert!((angles.minute - 90.0).abs() < 1e-9);

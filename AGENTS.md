@@ -10,22 +10,31 @@ Stop making things overly extensible - get it working to spec first and MAYBE of
 
 ## Project Structure & Module Organization
 
-- `src/main.rs` contains the CLI entry point and wires up the async runtime.
-- `src/lib.rs` exposes the `NtpClient` and error types used by the binary.
-- `src/cli.rs` defines CLI flags and environment variable bindings.
-- `src/prelude.rs` re-exports commonly used types.
+- Workspace crates:
+  - `ntp-clock/` holds the host CLI and shared NTP logic.
+  - `ntp-clock-hardware/` holds the Pico 2 W firmware and hardware helpers.
+- `ntp-clock/src/main.rs` contains the CLI entry point.
+- `ntp-clock/src/lib.rs` exposes the `NtpClient` and error types used by the CLI.
+- `ntp-clock/src/cli.rs` defines CLI flags and environment variable bindings.
+- `ntp-clock/src/prelude.rs` re-exports commonly used types.
+- `ntp-clock-hardware/src/main.rs` is the firmware entry point.
+- `ntp-clock-hardware/src/lib.rs` exposes hardware helpers (servos, switches, logging).
+- `ntp-clock-hardware/scripts/` contains build/flash helper scripts.
 - `target/` holds build artifacts and should not be edited.
 
 ## Build, Test, and Development Commands
 
 - Use the `justfile` to standardize developer commands; run `just --list` to see available tasks.
-- `just check` runs clippy, tests, and formatting in one pass.
-- `just clippy` runs the Rust linter across all targets.
-- `just test` runs the test suite.
+- `just check` runs clippy, tests, formatting, shellcheck, firmware build, and semgrep, then runs a `cargo check` for the hardware crate.
+- `just clippy` runs the Rust linter across both crates.
+- `just test` runs the host crate test suite.
 - `just fmt` formats Rust sources using rustfmt.
 - `just coverage` generates a tarpaulin HTML report at `tarpaulin-report.html`.
 - `just coveralls` uploads coverage to Coveralls (requires `COVERALLS_REPO_TOKEN`).
 - `just semgrep` runs static analysis with Semgrep.
+- `just build` builds Pico 2 W firmware via `ntp-clock-hardware/scripts/hardware-build.sh`.
+- `just flash` builds, flashes, and opens a serial console via `ntp-clock-hardware/scripts/flash-pico.sh` and `screen.sh`.
+- `just firmware` downloads the CYW43439 firmware blobs for the hardware crate.
 
 ## Coding Style & Naming Conventions
 
@@ -53,6 +62,9 @@ Stop making things overly extensible - get it working to spec first and MAYBE of
 ## Configuration & Usage Notes
 
 - The NTP server can be provided as a positional CLI argument or via `NTP_SERVER`.
-- Network access is required when real NTP querying is implemented; current logic is a placeholder.
+- The host CLI can resolve hostnames; the hardware firmware only accepts IPv4 literals for `NTP_SERVER`.
+- `WIFI_SSID` and `WIFI_PASSWORD` are compiled into the firmware; without them the firmware idles after USB logging starts.
+- Syslog forwarding is controlled by `SYSLOG_SERVER` (IPv4 literal) and optional `SYSLOG_PORT`.
+- Network access is required for NTP updates and for `just firmware` downloads.
 - Always use the `cargo` commands for managing packages and enable networking when doing so.
 - YOU ARE EXPLICITLY BANNED FROM MANUALLY EDITING Cargo.toml to change package definitions. USE CARGO THAT IS WHAT IT IS FOR.

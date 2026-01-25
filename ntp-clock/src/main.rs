@@ -15,7 +15,7 @@ use std::process::ExitCode;
 #[cfg(any(target_family = "unix", target_family = "windows"))]
 fn cli_main() -> Result<(), ExitCode> {
     use clap::Parser;
-    use ntp_clock::packets::NtpResponse;
+    use ntp_clock::packets::NtpPacket;
     use ntp_clock::{cli::Cli, clock::hand_angles, prelude::*};
 
     let cliopts = Cli::parse();
@@ -51,7 +51,7 @@ fn cli_main() -> Result<(), ExitCode> {
         cliopts.ntp_server, seconds, nanos, offset
     );
     if cliopts.show_angles {
-        let angles = hand_angles(&NtpResponse::from_nanos(time));
+        let angles = hand_angles(&NtpPacket::from_nanos(time));
         info!(
             "Hand angles (deg): hour={}, minute={}, second={}",
             angles.hour.round() as i64,

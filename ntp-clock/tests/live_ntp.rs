@@ -1,4 +1,4 @@
-use ntp_clock::{NtpClient, packets::NtpResponse, unix_nanos_now};
+use ntp_clock::{NtpClient, packets::NtpPacket, unix_nanos_now};
 use packed_struct::PackedStruct;
 
 #[test]
@@ -9,7 +9,7 @@ fn live_ntp_time_is_reasonable() {
     if sandbox_network_disabled || ci {
         let mut client = NtpClient::new("127.0.0.1").expect("client should parse server");
         let local_time = unix_nanos_now();
-        let response = NtpResponse::from_nanos(local_time)
+        let response = NtpPacket::from_nanos(local_time)
             .pack()
             .expect("should pack NTP response");
         let ntp_time = client
@@ -22,11 +22,11 @@ fn live_ntp_time_is_reasonable() {
             "mocked ntp time drift too large: {delta} seconds"
         );
 
-        let offset = client
+        let offset_nanos = client
             .last_response
             .expect("response should be available")
             .offset_from_local(local_time);
-        let offset_seconds = (offset as i128).abs() / 1_000_000_000;
+        let offset_seconds = (offset_nanos as i128).abs() / 1_000_000_000;
         assert!(
             offset_seconds <= 600,
             "mocked ntp offset too large: {offset_seconds} seconds"
@@ -49,7 +49,11 @@ fn live_ntp_time_is_reasonable() {
         .as_ref()
         .expect("response should be available")
         .offset_from_local(local_time);
-    assert!(offset <= 60, "NTP time drift too large: {offset} seconds");
+    let offset_seconds = (offset as i128).abs() / 1_000_000_000;
+    assert!(
+        offset_seconds <= 60,
+        "NTP time drift too large: {offset_seconds} seconds"
+    );
 
     let last_response = client
         .last_response
@@ -57,11 +61,10 @@ fn live_ntp_time_is_reasonable() {
         .expect("response should be available");
 
     let offset = last_response.offset_from_local(local_time);
-    // let offset_seconds = (offset as i128).abs() / 1_000_000_000;
-
+    let offset_seconds = (offset as i128).abs() / 1_000_000_000;
     assert!(
-        offset <= 60,
-        "stored NTP offset too large: {offset} seconds"
+        offset_seconds <= 60,
+        "stored NTP offset too large: {offset_seconds} seconds"
     );
     assert!(client.time_is_valid(), "time should be valid after update");
 }

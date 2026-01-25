@@ -17,7 +17,7 @@ use embassy_rp::pwm::{Config as PwmConfig, Pwm, SetDutyCycle};
 use embassy_time::{Duration, Timer};
 use fixed::traits::ToFixed;
 use ntp_clock::clock::hand_angles;
-use ntp_clock::packets::NtpResponse;
+use ntp_clock::packets::NtpPacket;
 use ntp_clock::parse_ntp_packet;
 use ntp_clock_hardware::constants::NETWORK_DETAILS_LOG_DELAY_SECS;
 use ntp_clock_hardware::hardware::{PwmServoController, ServoPwmConfig, angles_to_hand_degrees};
@@ -229,7 +229,7 @@ async fn idle_missing_wifi() -> ! {
     }
 }
 
-async fn query_ntp(socket: &mut UdpSocket<'_>, server: Ipv4Address) -> Option<NtpResponse> {
+async fn query_ntp(socket: &mut UdpSocket<'_>, server: Ipv4Address) -> Option<NtpPacket> {
     let mut request = [0u8; NTP_PACKET_LEN];
     request[0] = 0x1b;
     socket.send_to(&request, (server, NTP_PORT)).await.ok()?;

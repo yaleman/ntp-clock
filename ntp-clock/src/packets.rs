@@ -5,31 +5,8 @@ use packed_struct::prelude::*;
 #[cfg(feature = "std")]
 use std::{fmt::Display, net::IpAddr};
 
-#[derive(PackedStruct)]
-pub struct NtpRequestPacket {
-    firstbyte: u8,
-    leap: u8,
-    mode: u8,
-    stratum: u8,
-    poll: u8,
-    data: [u8; 43],
-}
-
-impl Default for NtpRequestPacket {
-    fn default() -> Self {
-        Self {
-            firstbyte: 27,
-            leap: 0,
-            mode: 0,
-            stratum: 0,
-            poll: 0,
-            data: [0u8; 43],
-        }
-    }
-}
-
 #[repr(u8)]
-#[derive(PrimitiveEnum_u8, Debug, Clone, Copy)]
+#[derive(PrimitiveEnum_u8, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NtpMode {
     Reserved = 0,
     SymmetricActive = 1,
@@ -43,7 +20,7 @@ pub enum NtpMode {
 
 #[derive(PackedStruct, Clone, Debug)]
 #[packed_struct(bit_numbering = "msb0")]
-pub struct NtpResponse {
+pub struct NtpPacket {
     // flags
     #[packed_field(bits = "0..=1")]
     pub leap_indicator: u8,
@@ -59,7 +36,7 @@ pub struct NtpResponse {
     /// 5: broadcast
     /// 6: reserved for NTP control messages
     /// 7: reserved for private use
-    pub mode: EnumCatchAll<NtpMode>,
+    mode: EnumCatchAll<NtpMode>,
 
     // rest of the fields
     pub stratum: u8,
@@ -110,9 +87,35 @@ pub struct NtpResponse {
     pub authenticator: [u8; 12],
 }
 
-impl NtpResponse {
+impl NtpPacket {
+    pub fn request() -> NtpPacket {
+        NtpPacket {
+            leap_indicator: 0,
+            version: 3,
+            mode: NtpMode::Client.into(),
+            stratum: 0,
+            poll: 0,
+            precision: 0,
+            root_delay_ms: [0, 0, 0, 0],
+            dispersion: [0, 0, 0, 0],
+            identifier: 0,
+            ref_time: 0,
+            origin_time: 0,
+            recv_time: 0,
+            transmit_time: 0,
+            authenticator: [0u8; 12],
+        }
+    }
+
+    pub fn with_transmit_time(&mut self, transmit_time: u64) -> Self {
+        Self {
+            transmit_time,
+            ..*self
+        }
+    }
+
     /// Create an NTP response packet from a given UNIX timestamp in nanoseconds.
-    pub fn from_nanos(unix_nanos: u64) -> NtpResponse {
+    pub fn from_nanos(unix_nanos: u64) -> NtpPacket {
         // let mut packet = [0u8; NTP_PACKET_LEN];
         // let unix_seconds = unix_nanos / 1_000_000_000;
         // let nanos = (unix_nanos % 1_000_000_000) as u128;
@@ -195,6 +198,13 @@ impl NtpResponse {
         Ok(array)
     }
 
+    pub fn mode(&self) -> NtpMode {
+        match self.mode {
+            EnumCatchAll::Enum(mode) => mode,
+            EnumCatchAll::CatchAll(_) => NtpMode::Reserved,
+        }
+    }
+
     /// Get the remote ID as an IpAddr
     pub fn remote_id(&self) -> Result<NtpIdentifier, ClockError> {
         match self.stratum {
@@ -221,10 +231,10 @@ impl NtpResponse {
 
     /// Calculate the offset between the local clock and the NTP server clock in nanoseconds.
     pub fn offset_from_local(&self, local_time_nanos: u64) -> i64 {
-        let origin_time: i128 = match self.origin_time as i128 {
-            0 => local_time_nanos as i128,
-            v => v,
-        };
+        if self.origin_time == 0 || local_time_nanos == 0 {
+            return 0;
+        }
+        let origin_time = self.origin_time as i128;
 
         ((self.recv_time as i128 - origin_time)
             + (self.transmit_time as i128 - local_time_nanos as i128))
@@ -403,16 +413,16 @@ mod test {
 
     #[test]
     fn test_packet_size() {
-        let req = NtpRequestPacket::default();
-        let packed_req = req.pack().expect("Should pack NtpRequestPacket");
+        let req = NtpPacket::request();
+        let packed_req = req.pack().expect("Should pack NtpPacket request");
         assert_eq!(
             packed_req.len(),
-            NTP_MIN_PACKET_LEN,
-            "Packed NtpRequestPacket size mismatch, should be {NTP_MIN_PACKET_LEN} bytes"
+            60,
+            "Packed NtpPacket request size mismatch, should be 60 bytes"
         );
 
-        let response = NtpResponse::from_nanos(0);
-        let packed_resp = response.as_bytes().expect("Should pack NtpResponse");
+        let response = NtpPacket::from_nanos(0);
+        let packed_resp = response.as_bytes().expect("Should pack NtpPacket");
 
         println!(
             "{} ",
@@ -426,7 +436,7 @@ mod test {
         assert_eq!(
             packed_resp.len(),
             NTP_MIN_PACKET_LEN,
-            "Packed NtpResponse size mismatch, should be {NTP_MIN_PACKET_LEN} bytes"
+            "Packed NtpPacket size mismatch, should be {NTP_MIN_PACKET_LEN} bytes"
         );
     }
     #[test]
@@ -437,6 +447,110 @@ mod test {
         assert_eq!(
             delay_ms, 0.017456055,
             "RootDelay to_milliseconds calculation incorrect"
+        );
+    }
+    #[test]
+    fn test_real_v3_packet() {
+        let bytes = [
+            0x1c, 0x3, 0x0, 0xe7, 0x0, 0x0, 0x4, 0x78, 0x0, 0x0, 0x0, 0x1a, 0xa, 0x55, 0x8, 0x30,
+            0xed, 0x20, 0xb, 0x24, 0x71, 0x87, 0xcc, 0xec, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0xed, 0x20, 0xc, 0x0, 0x3d, 0x0, 0x8c, 0xe5, 0xed, 0x20, 0xc, 0x0, 0x3d, 0x5, 0xbc,
+            0xf0,
+        ];
+
+        let response = crate::parse_ntp_packet(&bytes, 0).expect("Should parse NTP response");
+        assert_eq!(response.leap_indicator, 0, "Leap indicator should be 0");
+        assert_eq!(response.version, 3, "NTP version should be 3");
+        assert_eq!(
+            response.mode(),
+            NtpMode::Server,
+            "NTP mode should be Server"
+        );
+        assert_eq!(response.stratum, 3, "Stratum should be 3");
+        assert_eq!(response.poll, 0, "Poll should be 0");
+        assert_eq!(response.precision, -25, "Precision should be -25");
+        assert_eq!(
+            response.root_delay_ms,
+            [0x00, 0x00, 0x04, 0x78],
+            "Root delay bytes should match packet"
+        );
+        assert_eq!(
+            response.dispersion,
+            [0x00, 0x00, 0x00, 0x1a],
+            "Dispersion bytes should match packet"
+        );
+        assert_eq!(
+            response.identifier, 0x0a55_0830,
+            "Identifier should match packet"
+        );
+        // Jan 25, 2026 03:23:16.443478400 UTC
+        assert_eq!(
+            response.ref_time, 1_769_311_396_443_478_400,
+            "Local time should be Jan 25, 2026 03:23:16.443478400 UTC"
+        );
+        assert_eq!(response.origin_time, 0, "Origin time should be 0");
+        assert_eq!(
+            response.recv_time, 1_769_311_616_238_289_647,
+            "Receive time should match packet"
+        );
+        assert_eq!(
+            response.transmit_time, 1_769_311_616_238_368_805,
+            "Transmit time should match packet"
+        );
+        assert_eq!(
+            response.offset_from_local(response.transmit_time),
+            0,
+            "Offset should be 0"
+        );
+    }
+
+    #[test]
+    fn test_real_v3_response_packet() {
+        let bytes = [
+            0x1c, 0x4, 0x0, 0xe7, 0x0, 0x0, 0x17, 0x74, 0x0, 0x0, 0x3, 0x5b, 0x34, 0x94, 0x72,
+            0xbc, 0xed, 0x20, 0x12, 0xa0, 0x5f, 0xc7, 0x84, 0xc6, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0xed, 0x20, 0x15, 0xad, 0x77, 0x68, 0xf0, 0x31, 0xed, 0x20, 0x15, 0xad, 0x77,
+            0x6b, 0x39, 0xf0,
+        ];
+
+        let response = crate::parse_ntp_packet(&bytes, 0).expect("Should parse NTP response");
+        assert_eq!(response.leap_indicator, 0, "Leap indicator should be 0");
+        assert_eq!(response.version, 3, "NTP version should be 3");
+        assert_eq!(
+            response.mode(),
+            NtpMode::Server,
+            "NTP mode should be Server"
+        );
+        assert_eq!(response.stratum, 4, "Stratum should be 4");
+        assert_eq!(response.poll, 0, "Poll should be 0");
+        assert_eq!(response.precision, -25, "Precision should be -25");
+        assert_eq!(
+            response.root_delay_ms,
+            [0x00, 0x00, 0x17, 0x74],
+            "Root delay bytes should match packet"
+        );
+        assert_eq!(
+            response.dispersion,
+            [0x00, 0x00, 0x03, 0x5b],
+            "Dispersion bytes should match packet"
+        );
+        assert_eq!(
+            response.identifier, 0x34_94_72_bc,
+            "Identifier should match packet"
+        );
+        // Jan 25, 2026 03:55:12.374138162 UTC
+        assert_eq!(
+            response.ref_time, 1_769_313_312_374_138_162,
+            "Local time should be Jan 25, 2026 03:55:12.374138162 UTC"
+        );
+        assert_eq!(response.origin_time, 0, "Origin time should be 0");
+        assert_eq!(
+            response.recv_time, 1_769_314_093_466_444_980,
+            "Receive time should match packet"
+        );
+        assert_eq!(
+            response.transmit_time, 1_769_314_093_466_479_893,
+            "Transmit time should match packet"
         );
     }
 }

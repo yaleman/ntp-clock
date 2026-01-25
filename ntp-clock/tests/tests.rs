@@ -1,4 +1,4 @@
-use ntp_clock::{error::ClockError, packets::NtpResponse, parse_ntp_packet};
+use ntp_clock::{error::ClockError, packets::NtpPacket, parse_ntp_packet};
 use packed_struct::PackedStruct;
 
 const UNIX_NANOS_SAMPLE: u64 = 1_735_689_600_000_000_000;
@@ -6,7 +6,7 @@ const UNIX_NANOS_SAMPLE: u64 = 1_735_689_600_000_000_000;
 #[test]
 fn parse_packet_valid() {
     let local_time = UNIX_NANOS_SAMPLE;
-    let packet = NtpResponse::from_nanos(local_time)
+    let packet = NtpPacket::from_nanos(local_time)
         .pack()
         .expect("Should pack NTP response");
     let response = parse_ntp_packet(&packet, local_time).expect("Failed to parse valid NTP packet");

@@ -16,20 +16,23 @@ Pi Pico 2 W (4MB flash). Wi-Fi uses the CYW43439 via the `cyw43` crate and the
 
 ## Build
 
-Use the helper script to build a firmware image for Pico 2 W:
+Use the helper scripts (or `just build`) to build a firmware image for Pico 2 W:
 
 ```bash
-just firmware
 export WIFI_SSID=your-ssid
 export WIFI_PASSWORD=your-password
 export NTP_SERVER=129.6.15.28     # optional IPv4 literal
-./scripts/hardware-build.sh
+export SYSLOG_SERVER=192.168.1.50 # optional IPv4 literal
+export SYSLOG_PORT=514            # optional UDP port
+export USB_ONLY=1                 # optional: USB logging only
+just build
 ```
 
 This builds `ntp-clock-hardware` for the `thumbv8m.main-none-eabihf` target and
 generates a UF2 alongside the ELF. Override defaults with `PICO2W_TARGET` or
 `PICO2W_PROFILE` if needed. The script enables the `hardware` feature that pulls
-in RP2350/Wi-Fi support.
+in RP2350/Wi-Fi support. `just build` also ensures the CYW43439 firmware blobs
+are downloaded via `just firmware`.
 
 ## Flash
 
@@ -39,7 +42,7 @@ Flash by loading the firmware onto the mounted Pico 2 W:
 export WIFI_SSID=your-ssid
 export WIFI_PASSWORD=your-password
 export NTP_SERVER=129.6.15.28     # optional IPv4 literal
-./scripts/flash-pico.sh
+just flash
 ```
 
 Optional settings:
@@ -60,6 +63,7 @@ Optional settings:
 - Call `ClockMechanism::update_zeroing()` when a switch triggers to zero that hand.
 - Wi-Fi credentials are compiled in via `WIFI_SSID` and `WIFI_PASSWORD`.
 - `NTP_SERVER` must be an IPv4 literal (DNS lookups are not configured).
+- `USB_ONLY` skips Wi-Fi and network initialization, leaving USB logging active.
 
 ## Firmware Blobs
 
