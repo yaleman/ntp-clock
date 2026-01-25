@@ -2,16 +2,16 @@
 name = "ntp-clock-hardware"
 version = { workspace = true }
 edition = { workspace = true }
-
-[features]
-default = []
+readme = "README.md"
+license = { workspace = true }
+authors = { workspace = true }
 
 [[bin]]
 name = "ntp-clock-hardware"
 path = "src/main.rs"
 
 [dependencies]
-ntp-clock = { path = "..", default-features = false }
+ntp-clock = { path = "../ntp-clock", default-features = false }
 cyw43 = { version = "0.6.0" }
 cyw43-pio = { version = "0.9.0" }
 rp235x-hal = { version = "0.3.0", features = [

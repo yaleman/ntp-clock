@@ -1,18 +1,18 @@
 git := require("git")
 cargo := require("cargo")
-build_target := "thumbv8m.main-none-eabihf"
 
 default:
     just --list
 
 # run the linter, tests, and format the code
-check: clippy test fmt
-    cargo check -p ntp-clock-hardware --all-features --target {{build_target}}
-    find . -name '*.sh' | xargs shellcheck
+check: clippy test fmt shellcheck build semgrep
+    cd ntp-clock-hardware && cargo check -p ntp-clock-hardware
+
 
 # run clippy
 clippy:
-    cargo clippy --quiet -p ntp-clock-hardware --target {{build_target}} --bins
+    cd ntp-clock-hardware && cargo clippy --quiet -p ntp-clock-hardware
+    cargo clippy --quiet -p ntp-clock --all-features
 
 # run rust tests
 test:
@@ -49,5 +49,8 @@ coveralls:
     @echo "Coverage report should be at https://coveralls.io/github/yaleman/ntp-clock?branch=$(git branch --show-current)"
 
 semgrep:
-    semgrep ci --config auto \
+    semgrep ci --quiet --config auto \
     --exclude-rule "yaml.github-actions.security.third-party-action-not-pinned-to-commit-sha.third-party-action-not-pinned-to-commit-sha"
+
+shellcheck:
+    find . -name '*.sh' | xargs shellcheck

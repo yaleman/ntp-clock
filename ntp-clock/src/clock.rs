@@ -1,3 +1,5 @@
+use crate::packets::NtpResponse;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HandAngles {
     pub hour: f64,
@@ -39,9 +41,9 @@ fn normalize(value: f64, modulo: f64) -> f64 {
     wrapped
 }
 
-pub fn hand_angles(unix_nanos: u64) -> HandAngles {
-    let total_seconds = unix_nanos / 1_000_000_000;
-    let nanos = (unix_nanos % 1_000_000_000) as f64;
+pub fn hand_angles(ntp_response: &NtpResponse) -> HandAngles {
+    let total_seconds = ntp_response.ref_time / 1_000_000_000;
+    let nanos = (ntp_response.ref_time % 1_000_000_000) as f64;
 
     let hour = (total_seconds / 3600) % 12;
     let minute = (total_seconds / 60) % 60;
@@ -58,8 +60,8 @@ pub fn hand_angles(unix_nanos: u64) -> HandAngles {
     .normalize_degrees()
 }
 
-pub fn hand_angles_radians(unix_nanos: u64) -> HandAngles {
-    hand_angles(unix_nanos).to_radians().normalize_radians()
+pub fn hand_angles_radians(ntp_response: &NtpResponse) -> HandAngles {
+    hand_angles(ntp_response).to_radians().normalize_radians()
 }
 
 #[cfg(test)]
@@ -68,8 +70,8 @@ mod tests {
 
     #[test]
     fn hand_angles_known_time() {
-        let unix_nanos = 1_735_701_300_000_000_000u64;
-        let angles = hand_angles(unix_nanos);
+        let ntp_response = NtpResponse::from_nanos(1_735_701_300_000_000_000u64);
+        let angles = hand_angles(&ntp_response);
         assert!((angles.hour - 97.5).abs() < 1e-9);
         assert!((angles.minute - 90.0).abs() < 1e-9);
         assert!((angles.second - 0.0).abs() < 1e-9);

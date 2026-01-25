@@ -91,3 +91,9 @@ screen /dev/cu.usbmodem* 115200
 
 Logging goes through the `log` crate. Messages are queued into a small buffer and
 written to the CDC endpoint; if the buffer fills, newer messages are dropped.
+
+## Syslog Forwarding
+
+If you want logs sent over UDP syslog, define `SYSLOG_SERVER` (IPv4 literal) and
+optionally `SYSLOG_PORT` (defaults to `514`) at build time. Syslog messages are
+queued through the same logger and will be dropped if the buffer fills.
