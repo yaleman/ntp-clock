@@ -105,14 +105,10 @@ async fn main(spawner: Spawner) {
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
-    // because the files won't exist in CI
-    let (firmware, clm) = match option_env!("CI") {
-        Some("1") => (
-            include_bytes!("../firmware/43439A0.bin"),
-            include_bytes!("../firmware/43439A0_clm.bin"),
-        ),
-        _ => (&[0u8; 224190], &[0u8; 4752]),
-    };
+    let (firmware, clm) = (
+        include_bytes!("../firmware/43439A0.bin"),
+        include_bytes!("../firmware/43439A0_clm.bin"),
+    );
 
     let (net_device, mut control, runner) = cyw43::new(state, power, spi, firmware).await;
     let _ = spawner.spawn(wifi_task(runner));

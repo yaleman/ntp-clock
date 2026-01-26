@@ -27,6 +27,7 @@ jobs:
           components: clippy
       - name: "Run clippy"
         run: |
+          ./ntp-clock-hardware/scripts/download-firmware.sh
           just clippy
           just fmt
       - name: Run sccache stat for check

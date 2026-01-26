@@ -11,7 +11,7 @@
 #![deny(clippy::trivially_copy_pass_by_ref)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(any(target_family = "unix", target_family = "windows"))]
+#[cfg(feature = "std")]
 pub mod cli;
 
 pub mod clock;
