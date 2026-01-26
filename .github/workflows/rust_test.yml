@@ -29,7 +29,9 @@ jobs:
         run: |
           brew install picotool elf2uf2-rs
       - name: "Build the workspace"
-        run: FORCE=1 just build
+        run: |
+          picotool version && rustc --version
+          FORCE=1 just build
       # - name: Run sccache stat for check
       #   shell: bash
       #   run: ${SCCACHE_PATH} --show-stats
