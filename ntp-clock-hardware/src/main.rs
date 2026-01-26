@@ -36,11 +36,24 @@ const DEFAULT_SYSLOG_PORT: u16 = 514;
 
 const WIFI_SSID: &str = match option_env!("WIFI_SSID") {
     Some(value) => value,
-    None => panic!("WIFI_SSID environment variable not set"),
+    None => {
+        if option_env!("CI").is_none() {
+            panic!("WIFI_SSID environment variable not set")
+        } else {
+            ""
+        }
+    }
 };
+
 const WIFI_PASSWORD: &str = match option_env!("WIFI_PASSWORD") {
     Some(value) => value,
-    None => panic!("WIFI_PASSWORD environment variable not set"),
+    None => {
+        if option_env!("CI").is_none() {
+            panic!("WIFI_PASSWORD environment variable not set")
+        } else {
+            ""
+        }
+    }
 };
 const NTP_SERVER_ENV: &str = match option_env!("NTP_SERVER") {
     Some(value) => value,
@@ -92,8 +105,14 @@ async fn main(spawner: Spawner) {
 
     static STATE: StaticCell<cyw43::State> = StaticCell::new();
     let state = STATE.init(cyw43::State::new());
-    let firmware = include_bytes!("../firmware/43439A0.bin");
-    let clm = include_bytes!("../firmware/43439A0_clm.bin");
+    // because the files won't exist in CI
+    let (firmware, clm) = match option_env!("CI") {
+        Some("1") => (
+            include_bytes!("../firmware/43439A0.bin"),
+            include_bytes!("../firmware/43439A0_clm.bin"),
+        ),
+        _ => (&[0u8; 224190], &[0u8; 4752]),
+    };
 
     let (net_device, mut control, runner) = cyw43::new(state, power, spi, firmware).await;
     let _ = spawner.spawn(wifi_task(runner));
