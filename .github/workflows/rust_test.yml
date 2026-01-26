@@ -32,6 +32,8 @@ jobs:
         run: |
           brew install picotool elf2uf2-rs llvm
           echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
+      - name: "Build hardware (verbose)"
+        run: cargo build -p ntp-clock-hardware --target thumbv8m.main-none-eabihf --profile release -vv
       - name: "Build the workspace"
         run: |
           picotool version && rustc --version

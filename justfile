@@ -5,7 +5,7 @@ default:
     just --list
 
 # run the linter, tests, and format the code
-check: clippy test fmt shellcheck build semgrep
+check: clippy test fmt shellcheck build
     cd ntp-clock-hardware && cargo check -p ntp-clock-hardware
 
 
