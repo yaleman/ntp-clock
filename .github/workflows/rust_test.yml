@@ -23,8 +23,6 @@ jobs:
         with:
           target: thumbv8m.main-none-eabihf
       - uses: extractions/setup-just@v3
-      - name: "Download firmware"
-        run: ./ntp-clock-hardware/scripts/download-firmware.sh
       - name: "Run tests"
         run: just test
       - name: "Installing tools"
