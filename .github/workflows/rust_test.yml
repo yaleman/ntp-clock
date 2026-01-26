@@ -25,6 +25,9 @@ jobs:
         run: ./ntp-clock-hardware/scripts/download-firmware.sh
       - name: "Run tests"
         run: just test
+      - name: "Install picotool"
+        run: |
+          brew install picotool
       - name: "Build the workspace"
         run: just build
       - name: Run sccache stat for check
