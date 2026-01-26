@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
       - name: Setup sccache
@@ -23,7 +23,7 @@ jobs:
       - name: Install Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          target: target.thumbv8m.main-none-eabihf
+          target: thumbv8m.main-none-eabihf
           components: clippy
       - name: "Run clippy"
         run: |
