@@ -29,7 +29,7 @@ jobs:
         run: |
           brew install picotool
       - name: "Build the workspace"
-        run: just build
+        run: FORCE=1 just build
       - name: Run sccache stat for check
         shell: bash
         run: ${SCCACHE_PATH} --show-stats
