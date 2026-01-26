@@ -12,6 +12,8 @@ concurrency:
 jobs:
   cargo_test:
     runs-on: macos-latest
+    env:
+      CARGO_TARGET_THUMBV8M_MAIN_NONE_EABIHF_RUSTFLAGS: "-D warnings -C link-arg=-Tlink.x"
     steps:
       - uses: actions/checkout@v6
       - name: Setup sccache
