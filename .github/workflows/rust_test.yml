@@ -25,9 +25,9 @@ jobs:
         run: ./ntp-clock-hardware/scripts/download-firmware.sh
       - name: "Run tests"
         run: just test
-      - name: "Install picotool"
+      - name: "Installing tools"
         run: |
-          brew install picotool
+          brew install elf2uf2-rs
       - name: "Build the workspace"
         run: FORCE=1 just build
       # - name: Run sccache stat for check
