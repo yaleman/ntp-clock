@@ -3,9 +3,9 @@ name: Rust Testing
 "on":
   push:
   pull_request:
-env:
-  SCCACHE_GHA_ENABLED: "true"
-  RUSTC_WRAPPER: "sccache"
+# env:
+#   SCCACHE_GHA_ENABLED: "true"
+#   RUSTC_WRAPPER: "sccache"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -30,6 +30,6 @@ jobs:
           brew install picotool
       - name: "Build the workspace"
         run: FORCE=1 just build
-      - name: Run sccache stat for check
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
+      # - name: Run sccache stat for check
+      #   shell: bash
+      #   run: ${SCCACHE_PATH} --show-stats
