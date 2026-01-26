@@ -13,7 +13,15 @@ if [ "$(rustup target list --installed | grep -c "^${PICO2W_TARGET}$")" -eq 0 ];
   rustup target add "${PICO2W_TARGET}"
 fi
 
-cargo build \
+rustflags="${RUSTFLAGS:-}"
+if [[ "${rustflags}" != *"-Tlink.x"* ]]; then
+  if [[ -n "${rustflags}" ]]; then
+    rustflags+=" "
+  fi
+  rustflags+="-C link-arg=-Tlink.x"
+fi
+
+RUSTFLAGS="${rustflags}" cargo build \
   -p ntp-clock-hardware \
   --target "$PICO2W_TARGET" \
   --profile "$PICO2W_PROFILE"
