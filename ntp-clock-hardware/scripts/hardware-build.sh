@@ -13,7 +13,15 @@ if [ "$(rustup target list --installed | grep -c "^${PICO2W_TARGET}$")" -eq 0 ];
   rustup target add "${PICO2W_TARGET}"
 fi
 
-cargo build \
+rustflags="${RUSTFLAGS:-}"
+if [[ "${rustflags}" != *"-Tlink.x"* ]]; then
+  if [[ -n "${rustflags}" ]]; then
+    rustflags+=" "
+  fi
+  rustflags+="-C link-arg=-Tlink.x"
+fi
+
+RUSTFLAGS="${rustflags}" cargo build \
   -p ntp-clock-hardware \
   --target "$PICO2W_TARGET" \
   --profile "$PICO2W_PROFILE"
@@ -26,6 +34,20 @@ if [[ ! -f "${ELF_PATH}" ]]; then
   exit 1
 fi
 
+dump_elf_info() {
+  if command -v xcrun >/dev/null 2>&1; then
+    xcrun llvm-readobj --file-headers --program-headers "${ELF_PATH}" || true
+    return
+  fi
+  if command -v llvm-readelf >/dev/null 2>&1; then
+    llvm-readelf -h -l "${ELF_PATH}" || true
+    return
+  fi
+  if command -v readelf >/dev/null 2>&1; then
+    readelf -h -l "${ELF_PATH}" || true
+  fi
+}
+
 if command -v picotool >/dev/null 2>&1; then
   if picotool uf2 convert --family "${PICO2W_UF2_FAMILY}" -t elf "${ELF_PATH}" "${UF2_PATH}"; then
     if [[ -z "${PICO2W_FLASH_OFFSET:-}" && -z "${PICO2W_FLASH_ORIGIN:-}" ]]; then
@@ -34,6 +56,7 @@ if command -v picotool >/dev/null 2>&1; then
     exit 0
   fi
   echo "picotool failed to build UF2."
+  dump_elf_info
   exit 1
 fi
 
@@ -42,6 +65,7 @@ if command -v elf2uf2-rs >/dev/null 2>&1; then
     exit 0
   fi
   echo "elf2uf2-rs failed."
+  dump_elf_info
   exit 1
 fi
 

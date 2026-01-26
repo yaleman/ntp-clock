@@ -3,15 +3,17 @@ name: Rust Testing
 "on":
   push:
   pull_request:
-# env:
-#   SCCACHE_GHA_ENABLED: "true"
-#   RUSTC_WRAPPER: "sccache"
+env:
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   cargo_test:
     runs-on: macos-latest
+    env:
+      CARGO_TARGET_THUMBV8M_MAIN_NONE_EABIHF_RUSTFLAGS: "-D warnings -C link-arg=-Tlink.x"
     steps:
       - uses: actions/checkout@v6
       - name: Setup sccache
@@ -21,17 +23,12 @@ jobs:
         with:
           target: thumbv8m.main-none-eabihf
       - uses: extractions/setup-just@v3
-      - name: "Download firmware"
-        run: ./ntp-clock-hardware/scripts/download-firmware.sh
       - name: "Run tests"
-        run: just test
-      - name: "Installing tools"
         run: |
           brew install picotool elf2uf2-rs
-      - name: "Build the workspace"
-        run: |
           picotool version && rustc --version
+          just test
           FORCE=1 just build
-      # - name: Run sccache stat for check
-      #   shell: bash
-      #   run: ${SCCACHE_PATH} --show-stats
+      - name: Run sccache stat for check
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
