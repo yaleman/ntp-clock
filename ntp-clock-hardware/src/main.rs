@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 
+use core::panic;
 use core::str::FromStr;
 
 use cyw43::{Control, JoinOptions};
@@ -16,39 +17,37 @@ use embassy_rp::pio::{InterruptHandler, Pio};
 use embassy_rp::pwm::{Config as PwmConfig, Pwm, SetDutyCycle};
 use embassy_time::{Duration, Timer};
 use fixed::traits::ToFixed;
+use log::{info, warn};
 use ntp_clock::clock::hand_angles;
+use ntp_clock::constants::NTP_PORT;
 use ntp_clock::packets::NtpPacket;
 use ntp_clock::parse_ntp_packet;
 use ntp_clock_hardware::constants::NETWORK_DETAILS_LOG_DELAY_SECS;
 use ntp_clock_hardware::hardware::{PwmServoController, ServoPwmConfig, angles_to_hand_degrees};
 use ntp_clock_hardware::{ClockMechanism, LimitSwitches};
+use packed_struct::prelude::*;
 use panic_halt as _;
 use static_cell::StaticCell;
 
-const NTP_PORT: u16 = 123;
-const NTP_PACKET_LEN: usize = 48;
 const PWM_TARGET_HZ: u32 = 50;
 const PWM_DIVIDER: u32 = 125;
-const DEFAULT_NTP_SERVER: Ipv4Address = Ipv4Address::new(129, 6, 15, 28);
+const DEFAULT_NTP_SERVER: Ipv4Address = Ipv4Address::new(10, 0, 0, 1);
 const DEFAULT_SYSLOG_PORT: u16 = 514;
-const USB_ONLY: bool = option_env!("USB_ONLY").is_some();
 
 const WIFI_SSID: &str = match option_env!("WIFI_SSID") {
     Some(value) => value,
-    None => "",
+    None => panic!("WIFI_SSID environment variable not set"),
 };
 const WIFI_PASSWORD: &str = match option_env!("WIFI_PASSWORD") {
     Some(value) => value,
-    None => "",
+    None => panic!("WIFI_PASSWORD environment variable not set"),
 };
 const NTP_SERVER_ENV: &str = match option_env!("NTP_SERVER") {
     Some(value) => value,
     None => "",
 };
-const SYSLOG_SERVER_ENV: &str = match option_env!("SYSLOG_SERVER") {
-    Some(value) => value,
-    None => "",
-};
+const SYSLOG_SERVER_ENV: Option<&str> = option_env!("SYSLOG_SERVER");
+
 const SYSLOG_PORT_ENV: &str = match option_env!("SYSLOG_PORT") {
     Some(value) => value,
     None => "",
@@ -74,23 +73,6 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    if USB_ONLY {
-        log::info!("USB-only firmware mode");
-        usb_only_main(spawner, p).await;
-    } else {
-        full_main(spawner, p).await;
-    }
-}
-
-async fn usb_only_main(spawner: Spawner, p: embassy_rp::Peripherals) -> ! {
-    let usb = p.USB;
-    ntp_clock_hardware::usb::init_usb_logging(&spawner, usb);
-    loop {
-        Timer::after(Duration::from_secs(1)).await;
-    }
-}
-
-async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
     let usb = p.USB;
     ntp_clock_hardware::usb::init_usb_logging(&spawner, usb);
 
@@ -126,18 +108,29 @@ async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
     static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
     let resources = RESOURCES.init(StackResources::new());
     let config = Config::dhcpv4(Default::default());
-    let seed = 0x2f3a_9b5d;
-    let (stack, runner) = embassy_net::new(net_device, config, resources, seed);
+    // TODO: get a random seed from the RNG
+    let seed = 0x2f3a_9b5d_7c1e_4d6a;
+
+    let (network_stack, runner) = embassy_net::new(net_device, config, resources, seed);
     let _ = spawner.spawn(net_task(runner));
+    network_stack.wait_config_up().await;
+    info!("DHCP configuration acquired");
 
-    stack.wait_config_up().await;
-    log::info!("DHCP configuration acquired");
-
-    if let Some(syslog_server) = parse_ipv4(SYSLOG_SERVER_ENV) {
-        let port = parse_u16(SYSLOG_PORT_ENV).unwrap_or(DEFAULT_SYSLOG_PORT);
-        ntp_clock_hardware::usb::init_syslog_logging(&spawner, stack, syslog_server, port);
-    } else if !SYSLOG_SERVER_ENV.is_empty() {
-        log::warn!("SYSLOG_SERVER is not a valid IPv4 address");
+    if let Some(syslog_server_env) = SYSLOG_SERVER_ENV {
+        if let Some(syslog_server) = parse_ipv4(syslog_server_env) {
+            info!("Syslog server configured: {}", syslog_server_env);
+            let port = parse_u16(SYSLOG_PORT_ENV).unwrap_or(DEFAULT_SYSLOG_PORT);
+            ntp_clock_hardware::usb::init_syslog_logging(
+                &spawner,
+                network_stack,
+                syslog_server,
+                port,
+            );
+        } else {
+            warn!("SYSLOG_SERVER is not a valid IPv4 address");
+        }
+    } else {
+        info!("No syslog server configured");
     }
 
     let mut rx_meta = [PacketMetadata::EMPTY; 8];
@@ -145,7 +138,7 @@ async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
     let mut tx_meta = [PacketMetadata::EMPTY; 8];
     let mut tx_buffer = [0u8; 256];
     let mut socket = UdpSocket::new(
-        stack,
+        network_stack,
         &mut rx_meta,
         &mut rx_buffer,
         &mut tx_meta,
@@ -157,7 +150,7 @@ async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
         }
     }
 
-    let server = ntp_server();
+    let ntp_server = get_ntp_server();
 
     let pwm_top = pwm_top_from_sysclk();
     let mut pwm_config = PwmConfig::default();
@@ -182,28 +175,35 @@ async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
     let mut clock = ClockMechanism::new(controller, switches);
 
     let mut tick = 0u32;
+    let mut last_packet: Option<NtpPacket> = None;
     loop {
-        if let Some(config) = stack.config_v4() {
-            log::info!(
+        if let Some(config) = network_stack.config_v4() {
+            info!(
                 "Net config: addr={}, gateway={:?}, dns={:?}",
-                config.address,
-                config.gateway,
-                config.dns_servers
+                config.address, config.gateway, config.dns_servers
             );
         } else {
-            log::info!("Net config: DHCP not ready");
+            info!("Net config: DHCP not ready");
         }
 
-        if tick.is_multiple_of(4) {
-            log::info!("Running NTP update against {}", server);
-            if let Some(ntp_time) = query_ntp(&mut socket, server).await {
-                log::info!("NTP update successful: {}", ntp_time.to_string());
+        if tick.is_multiple_of(5) {
+            info!("Running NTP update against {}", ntp_server);
+
+            if let Some(ntp_time) = query_ntp(
+                &mut socket,
+                ntp_server,
+                last_packet.as_ref().map(|p| p.transmit_time),
+            )
+            .await
+            {
+                info!("NTP update successful: {}", ntp_time.to_string());
                 let angles = hand_angles(&ntp_time);
                 let degrees = angles_to_hand_degrees(angles);
                 let _ = clock.apply_hand_angles(degrees);
                 clock.update_zeroing();
+                last_packet = Some(ntp_time);
             } else {
-                log::warn!("NTP update failed");
+                warn!("NTP update failed");
             }
         }
         tick = tick.wrapping_add(1);
@@ -214,9 +214,9 @@ async fn full_main(spawner: Spawner, p: embassy_rp::Peripherals) {
 async fn connect_wifi(control: &mut Control<'static>) {
     loop {
         let options = JoinOptions::new(WIFI_PASSWORD.as_bytes());
-        log::info!("Joining WiFi SSID '{}'", WIFI_SSID);
+        info!("Joining WiFi SSID '{}'", WIFI_SSID);
         if control.join(WIFI_SSID, options).await.is_ok() {
-            log::info!("WiFi joined");
+            info!("WiFi joined");
             break;
         }
         Timer::after(Duration::from_secs(5)).await;
@@ -229,16 +229,24 @@ async fn idle_missing_wifi() -> ! {
     }
 }
 
-async fn query_ntp(socket: &mut UdpSocket<'_>, server: Ipv4Address) -> Option<NtpPacket> {
-    let mut request = [0u8; NTP_PACKET_LEN];
-    request[0] = 0x1b;
+async fn query_ntp(
+    socket: &mut UdpSocket<'_>,
+    server: Ipv4Address,
+    current_time: Option<u64>,
+) -> Option<NtpPacket> {
+    let request = NtpPacket::request()
+        .with_transmit_time(current_time.unwrap_or(0))
+        .pack()
+        .ok()?;
+
     socket.send_to(&request, (server, NTP_PORT)).await.ok()?;
-    let mut response = [0u8; NTP_PACKET_LEN];
+    let mut response = [0u8; ntp_clock::constants::NTP_MIN_PACKET_LEN];
     let (len, _) = socket.recv_from(&mut response).await.ok()?;
     parse_ntp_packet(&response[..len], 0).ok()
 }
 
-fn ntp_server() -> Ipv4Address {
+/// parse the NTP_SERVER_ENV or return the default NTP server
+fn get_ntp_server() -> Ipv4Address {
     parse_ipv4(NTP_SERVER_ENV).unwrap_or(DEFAULT_NTP_SERVER)
 }
 

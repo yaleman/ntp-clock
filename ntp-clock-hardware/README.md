@@ -24,7 +24,6 @@ export WIFI_PASSWORD=your-password
 export NTP_SERVER=129.6.15.28     # optional IPv4 literal
 export SYSLOG_SERVER=192.168.1.50 # optional IPv4 literal
 export SYSLOG_PORT=514            # optional UDP port
-export USB_ONLY=1                 # optional: USB logging only
 just build
 ```
 
@@ -63,7 +62,6 @@ Optional settings:
 - Call `ClockMechanism::update_zeroing()` when a switch triggers to zero that hand.
 - Wi-Fi credentials are compiled in via `WIFI_SSID` and `WIFI_PASSWORD`.
 - `NTP_SERVER` must be an IPv4 literal (DNS lookups are not configured).
-- `USB_ONLY` skips Wi-Fi and network initialization, leaving USB logging active.
 
 ## Firmware Blobs
 

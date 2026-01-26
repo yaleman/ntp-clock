@@ -278,6 +278,7 @@ impl NtpPacket {
     }
 }
 
+#[cfg(feature = "std")]
 pub enum NtpClockSource {
     GOES,
     GPS,
@@ -298,32 +299,51 @@ pub enum NtpClockSource {
     ACTS,
     USNO,
     PTB,
+    // from meinberg <https://www.meinbergglobal.com/english/info/ntp-refid.htm>
+    ATOM,
+    DCFa,
+    DCFp,
+    GPSs,
+    GPSi,
+    GLNs,
+    GLNi,
+    LCL,
+    LOCL,
+    Unknown(String),
 }
 #[cfg(feature = "std")]
-impl TryFrom<&str> for NtpClockSource {
-    type Error = ();
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
+impl From<&str> for NtpClockSource {
+    fn from(s: &str) -> Self {
         match s {
-            "GOES" => Ok(Self::GOES),
-            "GPS" => Ok(Self::GPS),
-            "GAL" => Ok(Self::GAL),
-            "PPS" => Ok(Self::PPS),
-            "IRIG" => Ok(Self::IRIG),
-            "WWVB" => Ok(Self::WWVB),
-            "DCF" => Ok(Self::DCF),
-            "HBG" => Ok(Self::HBG),
-            "MSF" => Ok(Self::MSF),
-            "JJY" => Ok(Self::JJY),
-            "LORC" => Ok(Self::LORC),
-            "TDF" => Ok(Self::TDF),
-            "CHU" => Ok(Self::CHU),
-            "WWV" => Ok(Self::WWV),
-            "WWVH" => Ok(Self::WWVH),
-            "NIST" => Ok(Self::NIST),
-            "ACTS" => Ok(Self::ACTS),
-            "USNO" => Ok(Self::USNO),
-            "PTB" => Ok(Self::PTB),
-            _ => Err(()),
+            "GOES" => Self::GOES,
+            "GPS" => Self::GPS,
+            "GAL" => Self::GAL,
+            "PPS" => Self::PPS,
+            "IRIG" => Self::IRIG,
+            "WWVB" => Self::WWVB,
+            "DCF" => Self::DCF,
+            "HBG" => Self::HBG,
+            "MSF" => Self::MSF,
+            "JJY" => Self::JJY,
+            "LORC" => Self::LORC,
+            "TDF" => Self::TDF,
+            "CHU" => Self::CHU,
+            "WWV" => Self::WWV,
+            "WWVH" => Self::WWVH,
+            "NIST" => Self::NIST,
+            "ACTS" => Self::ACTS,
+            "USNO" => Self::USNO,
+            "PTB" => Self::PTB,
+            "ATOM" => Self::ATOM,
+            "DCFa" => Self::DCFa,
+            "DCFp" => Self::DCFp,
+            "GPSs" => Self::GPSs,
+            "GPSi" => Self::GPSi,
+            "GLNs" => Self::GLNs,
+            "GLNi" => Self::GLNi,
+            "LCL" => Self::LCL,
+            "LOCL" => Self::LOCL,
+            _ => Self::Unknown(s.to_string()),
         }
     }
 }
@@ -354,6 +374,16 @@ impl Display for NtpClockSource {
                 Self::ACTS => "NIST telephone modem",
                 Self::USNO => "USNO telephone modem",
                 Self::PTB => "European telephone modem",
+                Self::ATOM => "with ATOM PPS",
+                Self::DCFa => "DCF77 with amplitude modulation",
+                Self::DCFp => "DCF77 with phase modulation)/pseudo random phase modulation",
+                Self::GPSs => "GPS (with shared memory access - Meinberg)",
+                Self::GPSi => "GPS (with interrupt based access - Meinberg)",
+                Self::GLNs => "GPS/GLONASS (with shared memory access - Meinberg)",
+                Self::GLNi => "GPS/GLONASS (with interrupt based access - Meinberg)",
+                Self::LCL => "Undisciplined local clock",
+                Self::LOCL => "Undisciplined local clock",
+                Self::Unknown(s) => s.as_str(),
             }
         )
     }
