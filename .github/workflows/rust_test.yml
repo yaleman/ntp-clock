@@ -27,7 +27,7 @@ jobs:
         run: just test
       - name: "Installing tools"
         run: |
-          brew install elf2uf2-rs
+          brew install picotool elf2uf2-rs
       - name: "Build the workspace"
         run: FORCE=1 just build
       # - name: Run sccache stat for check
