@@ -2,5 +2,5 @@
 /target
 tarpaulin-report.html
 *.profraw
-ntp-clock-hardware/firmware/43439A0_clm.bin
-ntp-clock-hardware/firmware/43439A0.bin
+ntp-clock-hardware/firmware/*.bin
+
