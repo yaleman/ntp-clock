@@ -23,6 +23,7 @@ fmt:
     cargo fmt --all
 
 build: firmware
+    cargo build --bin ntp-clock --release
     ./ntp-clock-hardware/scripts/hardware-build.sh
 
 flash: build
