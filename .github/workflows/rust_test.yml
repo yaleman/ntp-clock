@@ -27,7 +27,8 @@ jobs:
         run: just test
       - name: "Installing tools"
         run: |
-          brew install picotool elf2uf2-rs
+          brew install picotool elf2uf2-rs llvm
+          echo "/opt/homebrew/opt/llvm/bin" >> "$GITHUB_PATH"
       - name: "Build the workspace"
         run: |
           picotool version && rustc --version
