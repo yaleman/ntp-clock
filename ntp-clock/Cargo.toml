@@ -18,7 +18,7 @@ heapless = { workspace = true, default-features = false }
 
 [target.'cfg(any(target_family = "unix", target_family = "windows"))'.dependencies]
 simple_logger = { version = "5.1.0" }
-clap = { version = "4.5.56", features = ["derive", "env"] }
+clap = { version = "4.5.57", features = ["derive", "env"] }
 
 [dev-dependencies]
 ntest = "0.9.5"
