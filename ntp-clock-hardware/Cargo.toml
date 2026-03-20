@@ -31,7 +31,7 @@ packed_struct = { workspace = true }
 rp-pac = { version = "7.0.0", features = ["rp235x", "rt"] }
 embedded-hal = { version = "1.0.0" }
 embedded-alloc = { version = "0.7.0" }
-embassy-rp = { version = "0.9.0", features = [
+embassy-rp = { version = "0.10.0", features = [
     "chrono",
     "critical-section-impl",
     "imagedef-secure-exe",
