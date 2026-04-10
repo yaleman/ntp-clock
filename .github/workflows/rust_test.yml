@@ -22,7 +22,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           target: thumbv8m.main-none-eabihf
-      - uses: extractions/setup-just@v3
+      - uses: extractions/setup-just@v4
       - name: "Run tests"
         run: |
           brew install picotool elf2uf2-rs
