@@ -11,5 +11,5 @@ authors = ["James Hodgkinson"]
 
 [workspace.dependencies]
 heapless = { version = "0.9.3", default-features = false }
-log = { version = "0.4.30", default-features = false }
+log = { version = "0.4.32", default-features = false }
 packed_struct = { version = "0.10.1", default-features = false }
