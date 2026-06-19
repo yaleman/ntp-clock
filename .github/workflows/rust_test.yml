@@ -15,7 +15,7 @@ jobs:
     env:
       CARGO_TARGET_THUMBV8M_MAIN_NONE_EABIHF_RUSTFLAGS: "-D warnings -C link-arg=-Tlink.x"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.10
       - name: Install Rust
